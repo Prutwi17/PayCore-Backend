@@ -96,11 +96,13 @@ erDiagram
         BIGINT id PK
         BIGINT merchant_id FK
         VARCHAR idempotency_key
-        VARCHAR request_path
-        VARCHAR request_hash
+        VARCHAR request_fingerprint
+        VARCHAR payment_reference
         INT response_status
-        LONGTEXT response_body
+        TEXT response_body
+        VARCHAR processing_status
         DATETIME created_at
+        DATETIME updated_at
         DATETIME expires_at
     }
 

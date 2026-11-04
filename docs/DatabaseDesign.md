@@ -159,25 +159,30 @@ Captures every individual authorization/charge attempt against downstream provid
 
 ---
 
-### 2.8 Table: `idempotency_records`
-Persistent storage for duplicate request prevention.
+### 2.8 Table: idempotency_records
+Persistent authoritative storage for duplicate payment prevention, request fingerprinting, and cached response replaying.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Record ID |
-| `merchant_id` | BIGINT | NOT NULL, FK(`merchants.id`) | Tenant scope |
-| `idempotency_key` | VARCHAR(128) | NOT NULL | Client-supplied key |
-| `request_path` | VARCHAR(255) | NOT NULL | Request URI (e.g. `/api/v1/payments`) |
-| `request_hash` | VARCHAR(64) | NOT NULL | SHA-256 hash of payload |
-| `response_status` | INT | NOT NULL | Cached HTTP status (e.g. 201) |
-| `response_body` | LONGTEXT | NOT NULL | Cached serialized JSON response |
-| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | First invocation time |
-| `expires_at` | DATETIME(6) | NOT NULL | Expiry time (e.g. 24h retention) |
+| id | BIGINT AUTO_INCREMENT | PRIMARY KEY | Record surrogate ID |
+| merchant_id | BIGINT | NOT NULL, FK(merchants.id) | Merchant tenancy boundary |
+| idempotency_key | VARCHAR(128) | NOT NULL | Client-supplied key (1-128 chars) |
+| 
+equest_fingerprint | VARCHAR(64) | NOT NULL | SHA-256 canonical hash of normalized request payload |
+| payment_reference | VARCHAR(64) | NULL | Associated payment reference (pay_...) |
+| 
+esponse_status | INT | NULL | HTTP response status code (e.g. 201 Created, 200 OK) |
+| 
+esponse_body | TEXT | NULL | Serialized JSON response payload returned to client |
+| processing_status | VARCHAR(20) | NOT NULL | Lifecycle: PENDING, COMPLETED, FAILED |
+| created_at | DATETIME(6) | NOT NULL | Initial request receipt timestamp |
+| updated_at | DATETIME(6) | NOT NULL | State transition timestamp |
+| expires_at | DATETIME(6) | NOT NULL | Key expiration timestamp (default 24h retention) |
 
 *Constraints & Indexes:*
-- `uq_idempotency_merchant_key` UNIQUE (`merchant_id`, `idempotency_key`)
-- `idx_idempotency_expires_at` ON `idempotency_records(expires_at)`
-
+- uk_merchant_idempotency_key UNIQUE (merchant_id, idempotency_key) — Primary concurrency barrier enforcing zero duplicate transactions
+- idx_idempotency_expires_at ON idempotency_records(expires_at) — Index for background TTL expiration cleanup
+- idx_idempotency_payment_ref ON idempotency_records(payment_reference) — Fast lookup by payment reference
 ---
 
 ### 2.9 Table: `refunds`

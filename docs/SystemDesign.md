@@ -158,21 +158,58 @@ Client             PayCore API           Redis / MySQL         PaymentProvider
 
 ## 4. Failure Scenarios & Mitigations
 
-### 4.1 Duplicate Payment Requests (Idempotency)
-- **Scenario:** Client sends payment request with key `K1`. Network drops before client receives response. Client retries request with key `K1`.
-- **Handling:**
-  1. API checks `idempotency_records` table where `(merchant_id, idempotency_key)` is uniquely indexed.
-  2. If found, the request fingerprint is calculated (`SHA-256(HTTP Method + Path + Body)`).
-  3. If fingerprint matches: The stored HTTP status and response payload are returned immediately from the record without re-charging.
-  4. If fingerprint differs: HTTP `422 Unprocessable Entity` is returned with code `IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD`.
+### 4.1 Idempotency Architecture & 6 Critical Cases
 
-### 4.2 Simultaneous Concurrent Requests
-- **Scenario:** Client inadvertently issues two parallel HTTP POSTs with identical `Idempotency-Key` `K1` simultaneously.
-- **Handling:**
-  1. Both requests attempt to acquire a distributed Redis lock: `SET lock:idempotency:{merchant_id}:{key} {uuid} NX PX 10000`.
-  2. Request 1 succeeds and proceeds with processing.
-  3. Request 2 fails lock acquisition and immediately receives HTTP `409 Conflict` (`CONCURRENT_REQUEST_IN_FLIGHT`) or waits up to a tight timeout (500ms) before re-checking the idempotency record.
-  4. Even if Redis is evicted or restarted, the MySQL database unique constraint `uq_idempotency_merchant_key` rejects duplicate inserts with a constraint violation.
+Payment initiation requires a client-generated `Idempotency-Key` HTTP header scoped per merchant. The authoritative source of truth is the MySQL composite unique constraint `uk_merchant_idempotency_key` on `(merchant_id, idempotency_key)`. Redis acts strictly as an optional fast coordination lock and is never the sole protection against duplicates.
+
+#### The 6 Idempotency Scenarios:
+1. **CASE 1 — First Request (Fresh Key):**
+   - Atomically insert `idempotency_records` row with status `PENDING` and canonical SHA-256 `request_fingerprint`.
+   - Dispatch payment to provider adapter outside active database transaction.
+   - Atomically update record status to `COMPLETED`, cache serialized HTTP 201 response payload.
+   - Return HTTP `201 Created` with normal headers.
+2. **CASE 2 — Duplicate Request (Identical Key & Payload):**
+   - Find existing completed record matching `merchant_id` and `idempotency_key`.
+   - Compute incoming request fingerprint and verify equality with stored fingerprint.
+   - Return stored cached response with HTTP `200 OK` and response header `Idempotent-Replay: true`.
+   - Downstream payment provider is **NEVER** contacted a second time.
+3. **CASE 3 — Payload Conflict (Same Key, Altered Payload):**
+   - Identify existing record with matching key but mismatching `request_fingerprint`.
+   - Immediately reject with HTTP `409 Conflict` and error code `IDEMPOTENCY_CONFLICT`.
+   - Prevents accidental reuse of keys across distinct financial transactions.
+4. **CASE 4 — Concurrent Requests (Race Condition with Same Key):**
+   - Multiple threads or API instances simultaneously receive the same idempotency key.
+   - Serialized through Redis distributed lock (`SET lock:payment:idemp:{merchantId}:{key} {token} NX PX 15000`).
+   - If Redis is unavailable or contested, the MySQL database unique constraint `uk_merchant_idempotency_key` guarantees that exactly one thread succeeds in inserting the `PENDING` record.
+   - Concurrent threads catch `DataIntegrityViolationException` and enter a polling observation loop (up to 2.25s) awaiting primary completion.
+   - Once completed, observing threads return the cached result with HTTP `200 OK` (`Idempotent-Replay: true`). Exactly one payment is created in the database.
+5. **CASE 5 — Existing Request Currently In-Flight:**
+   - Client queries or retries while original thread is still actively communicating with provider.
+   - Service detects `processing_status = PENDING` and enters polling loop.
+   - If request exceeds poll window without completion, returns HTTP `202 Accepted` (`IDEMPOTENCY_PROCESSING`) advising client to query status endpoint. Under no circumstances is a second charge initiated.
+6. **CASE 6 — Expired Key Handling:**
+   - Keys have a 24-hour expiration window (`expires_at`).
+   - If key expires after payment completed: Service returns cached completed payment rather than initiating a duplicate charge.
+   - If key expired while pending/failed: Rejects with HTTP `409 Conflict` instructing client to initiate with a fresh key.
+
+#### Request Fingerprint Algorithm:
+The fingerprint is a deterministic SHA-256 digest calculated over normalized canonical fields:
+`SHA-256(amount.stripTrailingZeros() + "|" + currency.toUpperCase() + "|" + paymentMethod + "|" + customerReference.trim() + "|" + description.trim())`
+
+#### Redis Coordination & Automated Circuit Breaker:
+- Redis key: `lock:payment:idemp:{merchantId}:{idempotencyKey}` with 15-second TTL.
+- Atomic release via Lua script matching ownership token.
+- If Redis is unreachable, an automated circuit breaker trips (`CIRCUIT_BREAKER_RESET_MS = 30000`), instantly bypassing Redis and relying directly on the database unique constraint without latency spikes or duplicate charges.
+
+### 4.2 Retry Strategy & Charge Safety Invariant
+The `PaymentRetryExecutor` strictly segregates query and charge operations:
+- **Safe Queries (Status Verification):** Retried up to 3 times with exponential backoff (100ms, 200ms, 400ms) on transient socket or network blips.
+- **Unsafe Charges (Payment Dispatch):** **STRICTLY PROHIBITED FROM BLIND RETRIES.** If a charge call encounters a network timeout, retrying blindly risks double-charging the customer. Instead, the transaction status is marked `UNKNOWN` with attempt telemetry preserved, and resolved via idempotent status verification (`GET /payments/{ref}/status?verify=true`).
+
+### 4.3 Concurrency Control & Optimistic Locking
+- The `payments` table includes a JPA `@Version` column (`version BIGINT`).
+- Optimistic locking prevents concurrent state machine updates and race conditions during simultaneous webhook callbacks, refunds, or cancellations.
+- Conflicts trigger `OptimisticLockException` translated to HTTP `409 Conflict` (`CONCURRENCY_CONFLICT`).
 
 ### 4.3 Payment Provider Timeouts
 - **Scenario:** The backend invokes the provider. The downstream network drops or provider hangs past 5000ms.
