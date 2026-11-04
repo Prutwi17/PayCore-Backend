@@ -1,0 +1,20 @@
+# ===================================================================
+# PayCore — Local Development Environment Example
+# Copy this file to application-local.properties for custom local runs
+# (application-local.properties is git-ignored)
+# ===================================================================
+
+# Database Settings
+DB_URL=jdbc:mysql://localhost:3306/paycore_dev_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+DB_USERNAME=root
+DB_PASSWORD=your_local_password_here
+
+# Redis Settings
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Kafka Settings
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+# CORS Allowed Origins
+app.cors.allowed-origins=http://localhost:5173,http://localhost:3000
