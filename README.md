@@ -74,17 +74,20 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 3 Complete)
+## 🧪 Testing & Current Status (Stage 4 Complete)
 
-PayCore Stage 3 (Core Payment Processing Engine) is fully implemented, verified, and operational:
+PayCore Stage 4 (Idempotency, Concurrency & Payment Reliability) is fully implemented, verified, and operational:
 
-- **Automated Tests:** 41 passing tests (Unit, State Machine, Provider Simulator, Service, and MockMvc/H2 End-to-End Integration tests).
-- **Payment Domain & State Machine:** Centralized enforcement of transitions (CREATED, PROCESSING, REQUIRES_ACTION, AUTHORIZED, SUCCESS, FAILED, CANCELLED, UNKNOWN). Terminal states (SUCCESS, FAILED, CANCELLED) are immutable.
-- **Simulated Payment Provider:** Dynamic provider abstraction with deterministic test scenario controls (SUCCESS, FAIL with decline codes, REQUIRES_ACTION 3DS challenge, TIMEOUT downstream failure resulting in UNKNOWN state).
-- **Zero-DB Network I/O Principle:** Downstream provider network calls execute strictly outside of database transactions (REQUIRES_NEW initial transaction -> provider network execution -> REQUIRES_NEW outcome transaction), protecting database connection pools from exhaustion.
-- **Payment Attempt Telemetry:** Full per-attempt auditing (PaymentAttempt) recording ttemptNumber, 
-equestReference, provider transaction IDs, response status codes, timestamps, and error messages without mutating historical records.
-- **Status Verification & Cancellation:** Self-healing verification endpoint /api/v1/payments/{ref}/status resolves ambiguous UNKNOWN states, and /api/v1/payments/{ref}/cancel safely cancels eligible payments.
-- **Role-Based Payment Access:** Strict merchant data isolation and admin ledger inspection endpoints.
-
-
+- **Automated Tests:** 49 passing tests (Unit, Service, State Machine, Fingerprinting, Retry Executor, and MockMvc/H2 End-to-End Idempotency & Concurrency Integration tests).
+- **Authoritative Idempotency Barrier:** Persistent MySQL composite unique constraint uk_merchant_idempotency_key on (merchant_id, idempotency_key) guarantees zero duplicate payments even under severe network replay or process crashes. Redis is strictly a fast-coordination layer and never the sole protection against duplicates.
+- **6 Idempotency Scenarios Handled:**
+  1. *First Request:* Fresh payment created, HTTP 201 Created.
+  2. *Idempotent Replay:* Duplicate request with matching key & payload returns cached response with HTTP 200 OK and Idempotent-Replay: true header. No second provider charge.
+  3. *Payload Conflict:* Same key with altered request payload rejected with HTTP 409 Conflict (IDEMPOTENCY_CONFLICT).
+  4. *Concurrent Requests:* Parallel threads safely serialize via DB constraint + Redis lock; observing threads poll and return completed payment with HTTP 200 OK.
+  5. *In-Flight Processing:* Active operations return HTTP 202 Accepted (IDEMPOTENCY_PROCESSING) without initiating duplicate provider calls.
+  6. *24-Hour Expiration:* Expired keys for completed payments return the original transaction safely rather than double-charging.
+- **Request Fingerprinting:** Deterministic SHA-256 canonical hashing across normalized monetary amounts, currency codes, payment methods, customer references, and descriptions.
+- **Optimistic Locking:** JPA @Version column on Payment entity detects and rejects concurrent entity mutations with HTTP 409 Conflict (CONCURRENCY_CONFLICT).
+- **Safe Query Retries vs. Charge Safety Invariant:** Strict distinction between safe read queries (status verification with exponential backoff) and unsafe charges (blind retries strictly prohibited on network timeouts to prevent duplicate charges).
+- **Redis Coordination with Automated Circuit Breaker:** Safe Lua atomic lock release script with 30-second circuit breaker that trips automatically on Redis outage, falling back directly to database-level synchronization with zero duplicate risk.

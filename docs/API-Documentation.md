@@ -121,10 +121,14 @@
 
 ## 4. Payment Processing Endpoints (`/api/v1/payments`)
 
-### 4.1 Create / Initiate Payment
+### 4.1 Create / Initiate Payment with Idempotency
 - **Endpoint:** `POST /api/v1/payments`
 - **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
-- **Headers:** `Authorization: Bearer <jwt>`
+- **Mandatory Headers:**
+  - `Authorization: Bearer <jwt>`
+  - `Idempotency-Key: <unique-client-generated-key>` (1-128 characters, e.g. UUID v4)
+- **Response Headers:**
+  - `Idempotent-Replay: true` (Included when returning a cached idempotent response)
 - **Request Body:**
   ```json
   {
@@ -137,32 +141,40 @@
   }
   ```
   *Note on `simulationScenario`: Optional parameter supporting deterministic outcomes (`SUCCESS`, `FAIL`, `TIMEOUT`, `REQUIRES_ACTION`).*
-- **Response (201 Created):**
-  ```json
-  {
-    "success": true,
-    "message": "Payment processed successfully",
-    "data": {
-      "id": 1,
-      "paymentReference": "pay_64557f2597dd49b99de4",
-      "merchantId": 10,
-      "merchantCode": "MCH_ALPHA_01",
-      "customerReference": "cust_user_42@example.com",
-      "amount": 1499.5000,
-      "currency": "INR",
-      "description": "Order #9021 payment",
-      "paymentMethod": "CARD",
-      "status": "SUCCESS",
-      "provider": "SIMULATED",
-      "providerTransactionId": "sim_tx_2ea36e503b5f4ad2",
-      "failureCode": null,
-      "failureMessage": null,
-      "createdAt": "2026-11-05T02:00:00.000Z",
-      "updatedAt": "2026-11-05T02:00:00.050Z",
-      "processedAt": "2026-11-05T02:00:00.050Z"
+- **Status Codes & Responses:**
+  - **HTTP 201 Created:** Fresh payment processed successfully.
+    ```json
+    {
+      "success": true,
+      "message": "Payment processed successfully",
+      "data": {
+        "id": 1,
+        "paymentReference": "pay_64557f2597dd49b99de4",
+        "merchantId": 10,
+        "merchantCode": "MCH_ALPHA_01",
+        "customerReference": "cust_user_42@example.com",
+        "amount": 1499.5000,
+        "currency": "INR",
+        "description": "Order #9021 payment",
+        "paymentMethod": "CARD",
+        "status": "SUCCESS",
+        "provider": "SIMULATED",
+        "providerTransactionId": "sim_tx_2ea36e503b5f4ad2",
+        "failureCode": null,
+        "failureMessage": null,
+        "idempotentReplay": false,
+        "createdAt": "2026-11-05T02:00:00.000Z",
+        "updatedAt": "2026-11-05T02:00:00.050Z",
+        "processedAt": "2026-11-05T02:00:00.050Z"
+      }
     }
-  }
-  ```
+    ```
+  - **HTTP 200 OK (Idempotent Replay):** Duplicate request sharing the same key and payload. Returns cached payment with header `Idempotent-Replay: true` and `"idempotentReplay": true`. No duplicate provider charge occurs.
+  - **HTTP 202 Accepted:** Request with same key is currently in-flight concurrently (`IDEMPOTENCY_PROCESSING`).
+  - **HTTP 400 Bad Request:** Missing `Idempotency-Key` header (`IDEMPOTENCY_KEY_INVALID`).
+  - **HTTP 409 Conflict:**
+    - `IDEMPOTENCY_CONFLICT`: Same key reused with an altered request payload.
+    - `CONCURRENCY_CONFLICT`: Optimistic locking collision on concurrent resource modification.
 
 ### 4.2 List Merchant Payments
 - **Endpoint:** `GET /api/v1/payments?status=SUCCESS&search=cust_user&page=0&size=10&sortBy=createdAt&sortDirection=desc`
