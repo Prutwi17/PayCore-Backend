@@ -52,7 +52,7 @@ Detailed technical documentation is maintained under the [`docs/`](./docs) direc
 
 ### Prerequisites
 - Java 17 LTS
-- Maven 3.9+
+- Maven 3.9+ (or use `./mvnw` wrapper)
 - Docker & Docker Compose
 - Node.js 20+ (for frontend)
 
@@ -65,7 +65,7 @@ docker-compose up -d mysql redis kafka
 ### Running Backend Locally
 ```bash
 cd PayCore-Backend
-mvn clean spring-boot:run
+./mvnw spring-boot:run
 ```
 
 API Server starts at: `http://localhost:8080`  
@@ -74,8 +74,17 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing & Current Status (Stage 2 Complete)
+
+PayCore Stage 2 (Authentication, Authorization & Merchant Management) is fully implemented, verified, and operational:
+
+- **Automated Tests:** 18 passing tests (Unit & MockMvc/H2 End-to-End Integration tests).
+- **Core Security:** JWT stateless authentication (HMAC-SHA256, JJWT 0.12.5), BCrypt (strength 12), Role-Based Access Control (`ROLE_ADMIN`, `ROLE_MERCHANT`, `ROLE_CUSTOMER`).
+- **Merchant Management:** Automated provisioning, code generation (`MCH_...`), lifecycle status control (`PENDING`, `ACTIVE`, `SUSPENDED`, `REJECTED`).
+- **API Key Engine:** 256-bit cryptographically secure generation (`sk_live_...`), salted SHA-256 storage, single exposure policy, instant revocation with merchant isolation.
+- **Default Platform Admin:** `admin@paycore.internal` / `AdminPassword123!` (automatically seeded on startup via `DataInitializer`).
+
 ```bash
 # Run unit & integration test suites
-mvn clean verify
+./mvnw test
 ```
