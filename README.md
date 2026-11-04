@@ -74,17 +74,17 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 2 Complete)
+## 🧪 Testing & Current Status (Stage 3 Complete)
 
-PayCore Stage 2 (Authentication, Authorization & Merchant Management) is fully implemented, verified, and operational:
+PayCore Stage 3 (Core Payment Processing Engine) is fully implemented, verified, and operational:
 
-- **Automated Tests:** 18 passing tests (Unit & MockMvc/H2 End-to-End Integration tests).
-- **Core Security:** JWT stateless authentication (HMAC-SHA256, JJWT 0.12.5), BCrypt (strength 12), Role-Based Access Control (`ROLE_ADMIN`, `ROLE_MERCHANT`, `ROLE_CUSTOMER`).
-- **Merchant Management:** Automated provisioning, code generation (`MCH_...`), lifecycle status control (`PENDING`, `ACTIVE`, `SUSPENDED`, `REJECTED`).
-- **API Key Engine:** 256-bit cryptographically secure generation (`sk_live_...`), salted SHA-256 storage, single exposure policy, instant revocation with merchant isolation.
-- **Default Platform Admin:** `admin@paycore.internal` / `AdminPassword123!` (automatically seeded on startup via `DataInitializer`).
+- **Automated Tests:** 41 passing tests (Unit, State Machine, Provider Simulator, Service, and MockMvc/H2 End-to-End Integration tests).
+- **Payment Domain & State Machine:** Centralized enforcement of transitions (CREATED, PROCESSING, REQUIRES_ACTION, AUTHORIZED, SUCCESS, FAILED, CANCELLED, UNKNOWN). Terminal states (SUCCESS, FAILED, CANCELLED) are immutable.
+- **Simulated Payment Provider:** Dynamic provider abstraction with deterministic test scenario controls (SUCCESS, FAIL with decline codes, REQUIRES_ACTION 3DS challenge, TIMEOUT downstream failure resulting in UNKNOWN state).
+- **Zero-DB Network I/O Principle:** Downstream provider network calls execute strictly outside of database transactions (REQUIRES_NEW initial transaction -> provider network execution -> REQUIRES_NEW outcome transaction), protecting database connection pools from exhaustion.
+- **Payment Attempt Telemetry:** Full per-attempt auditing (PaymentAttempt) recording ttemptNumber, 
+equestReference, provider transaction IDs, response status codes, timestamps, and error messages without mutating historical records.
+- **Status Verification & Cancellation:** Self-healing verification endpoint /api/v1/payments/{ref}/status resolves ambiguous UNKNOWN states, and /api/v1/payments/{ref}/cancel safely cancels eligible payments.
+- **Role-Based Payment Access:** Strict merchant data isolation and admin ledger inspection endpoints.
 
-```bash
-# Run unit & integration test suites
-./mvnw test
-```
+

@@ -1,5 +1,6 @@
 package com.paycore.common.response;
 
+import org.springframework.data.domain.Page;
 import java.util.List;
 
 /**
@@ -26,6 +27,17 @@ public class PagedResponse<T> {
         this.totalElements = totalElements;
         this.totalPages = totalPages;
         this.last = last;
+    }
+
+    public static <T> PagedResponse<T> from(Page<T> page) {
+        return new PagedResponse<>(
+                page.getContent(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast()
+        );
     }
 
     public List<T> getContent() {

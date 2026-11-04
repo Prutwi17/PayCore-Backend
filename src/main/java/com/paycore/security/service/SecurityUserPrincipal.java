@@ -66,6 +66,12 @@ public class SecurityUserPrincipal implements UserDetails {
         return merchantId;
     }
 
+    public boolean hasRole(String role) {
+        if (authorities == null) return false;
+        return authorities.stream()
+                .anyMatch(a -> a.getAuthority().equals(role));
+    }
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
