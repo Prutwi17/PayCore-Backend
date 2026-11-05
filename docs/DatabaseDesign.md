@@ -117,9 +117,10 @@ Core ledger representing a payment request and its authoritative lifecycle state
 | `customer_id` | BIGINT | NULL, FK(`customers.id`) | Payer customer record |
 | `order_id` | VARCHAR(128) | NOT NULL | Merchant order reference (e.g. `ORD-1001`) |
 | `amount` | DECIMAL(19,4) | NOT NULL | Transaction principal amount |
-| `amount_refunded` | DECIMAL(19,4) | NOT NULL DEFAULT 0.0000 | Cumulative refunded amount |
+| `amount_refunded` | DECIMAL(19,4) | NOT NULL DEFAULT 0.0000 | Cumulative settled refunded amount |
+| `amount_refund_reserved` | DECIMAL(19,4) | NOT NULL DEFAULT 0.0000 | In-flight active reserved refund balance (concurrency protection) |
 | `currency` | VARCHAR(3) | NOT NULL | ISO 4217 Currency Code (`INR`, `USD`, `EUR`) |
-| `status` | VARCHAR(32) | NOT NULL | State machine status: `CREATED`, `PROCESSING`, `REQUIRES_ACTION`, `AUTHORIZED`, `SUCCESS`, `FAILED`, `CANCELLED`, `UNKNOWN` |
+| `status` | VARCHAR(32) | NOT NULL | State machine status: `CREATED`, `PROCESSING`, `REQUIRES_ACTION`, `AUTHORIZED`, `SUCCESS`, `PARTIALLY_REFUNDED`, `REFUNDED`, `FAILED`, `CANCELLED`, `UNKNOWN` |
 | `payment_method` | VARCHAR(32) | NOT NULL | `CARD`, `UPI`, `NET_BANKING`, `WALLET` |
 | `payment_provider` | VARCHAR(64) | NOT NULL DEFAULT 'SIMULATED' | Provider adapter name |
 | `provider_transaction_id`| VARCHAR(128) | NULL | External provider reference code |
@@ -186,26 +187,72 @@ esponse_body | TEXT | NULL | Serialized JSON response payload returned to client
 ---
 
 ### 2.9 Table: `refunds`
-Manages full and partial refund requests.
+Authoritative ledger for full and partial refund transactions, lifecycle state machine tracking, and provider settlement reference recording.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Internal DB ID |
-| `refund_id` | VARCHAR(64) | NOT NULL, UNIQUE | External refund ID (e.g. `REF_7712A`) |
-| `payment_id` | BIGINT | NOT NULL, FK(`payments.id`) | Associated payment |
-| `merchant_id` | BIGINT | NOT NULL, FK(`merchants.id`) | Tenant ID |
-| `amount` | DECIMAL(19,4) | NOT NULL | Refund amount requested |
-| `currency` | VARCHAR(3) | NOT NULL | Must match parent payment currency |
-| `reason` | VARCHAR(255) | NULL | Reason code / merchant memo |
-| `status` | VARCHAR(32) | NOT NULL | `REQUESTED`, `PROCESSING`, `SUCCESS`, `FAILED` |
-| `provider_refund_id`| VARCHAR(128) | NULL | Provider refund reference |
-| `error_code` | VARCHAR(64) | NULL | Failure reason if failed |
-| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Request timestamp |
-| `updated_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) | Completion timestamp |
+| `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Internal DB surrogate key |
+| `refund_reference` | VARCHAR(64) | NOT NULL, UNIQUE | Public external refund reference (`ref_...`) |
+| `payment_id` | BIGINT | NOT NULL, FK(`payments.id`) | Associated parent payment |
+| `merchant_id` | BIGINT | NOT NULL, FK(`merchants.id`) | Tenant owning this refund transaction |
+| `amount` | DECIMAL(19,4) | NOT NULL | Refund principal amount requested |
+| `currency` | VARCHAR(3) | NOT NULL | ISO 4217 currency code (strictly matches parent payment) |
+| `reason` | VARCHAR(255) | NULL | Refund motivation / merchant memo |
+| `status` | VARCHAR(32) | NOT NULL | State machine status: `REQUESTED`, `PROCESSING`, `SUCCESS`, `FAILED`, `UNKNOWN` |
+| `provider_refund_id`| VARCHAR(128) | NULL | External payment provider refund identifier |
+| `failure_code` | VARCHAR(64) | NULL | Standardized error categorization code |
+| `failure_message` | VARCHAR(500) | NULL | Provider / validation failure explanation |
+| `requested_at` | DATETIME(6) | NOT NULL | Initial submission timestamp |
+| `processed_at` | DATETIME(6) | NULL | Final terminal settlement timestamp |
+| `version` | BIGINT | NOT NULL DEFAULT 0 | Optimistic concurrency control version |
+| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Creation timestamp |
+| `updated_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) | State transition timestamp |
 
-*Indexes:*
+*Indexes & Constraints:*
+- `uk_refunds_refund_ref` UNIQUE (`refund_reference`)
 - `idx_refunds_payment_id` ON `refunds(payment_id)`
-- `idx_refunds_merchant_id` ON `refunds(merchant_id, created_at DESC)`
+- `idx_refunds_merchant_created` ON `refunds(merchant_id, created_at DESC)`
+- `idx_refunds_status` ON `refunds(status)`
+- `idx_refunds_provider_ref` ON `refunds(provider_refund_id)`
+
+---
+
+### 2.10 View: `v_transactions` (Unified Transaction Ledger)
+An immutable database-level view (`UNION ALL` across `payments` and `refunds`) providing high-performance query execution, pagination, sorting, and multi-field filtering for merchant and administrative transaction ledgers without requiring memory-heavy application joins.
+
+```sql
+CREATE OR REPLACE VIEW v_transactions AS
+SELECT
+    CONCAT('PAY_', p.id) AS transaction_id,
+    p.payment_reference AS transaction_reference,
+    p.payment_reference AS parent_reference,
+    p.merchant_id AS merchant_id,
+    'PAYMENT' AS transaction_type,
+    p.amount AS amount,
+    p.currency AS currency,
+    p.status AS status,
+    p.description AS description,
+    p.created_at AS created_at,
+    p.processed_at AS processed_at
+FROM payments p
+UNION ALL
+SELECT
+    CONCAT('REF_', r.id) AS transaction_id,
+    r.refund_reference AS transaction_reference,
+    p.payment_reference AS parent_reference,
+    r.merchant_id AS merchant_id,
+    'REFUND' AS transaction_type,
+    r.amount AS amount,
+    r.currency AS currency,
+    r.status AS status,
+    r.reason AS description,
+    r.created_at AS created_at,
+    r.processed_at AS processed_at
+FROM refunds r
+JOIN payments p ON r.payment_id = p.id;
+```
+
+*Subselect Mapping:* Mapped in Spring Data JPA as an `@Entity` annotated with `@Immutable` and `@Subselect("SELECT ... FROM payments UNION ALL SELECT ... FROM refunds")` for fast pageable queries.
 
 ---
 

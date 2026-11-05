@@ -234,3 +234,172 @@
 - **Endpoint:** `GET /api/v1/admin/payments/{paymentReference}`
 - **Endpoint:** `GET /api/v1/admin/payments/{paymentReference}/attempts`
 - **Access:** Admin (`ROLE_ADMIN` only)
+
+---
+
+## 6. Refund Processing Endpoints (`/api/v1/refunds` & `/api/v1/payments/{ref}/refunds`)
+
+### 6.1 Initiate Refund with Idempotency & Balance Reservation
+- **Endpoint:** `POST /api/v1/payments/{paymentReference}/refunds`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Headers:**
+  - `Authorization: Bearer <jwt>`
+  - `Idempotency-Key: <unique-key>` (Optional but highly recommended)
+- **Request Body:**
+  ```json
+  {
+    "amount": 500.00,
+    "currency": "INR",
+    "reason": "Customer item returned in good condition"
+  }
+  ```
+  *Simulation triggers supported in reason:*
+  - `[SIM_FAIL]`: Forces simulated gateway refund failure.
+  - `[SIM_TIMEOUT]`: Forces simulated network timeout / `UNKNOWN` state.
+- **Response Headers:**
+  - `Idempotent-Replay: true` (Present on idempotent replay)
+- **Status Codes & Responses:**
+  - **HTTP 201 Created:** Refund initiated and settled successfully.
+    ```json
+    {
+      "success": true,
+      "message": "Refund processed successfully",
+      "data": {
+        "id": 1,
+        "refundReference": "ref_9a87bc12d34e56",
+        "paymentReference": "pay_64557f2597dd49b99de4",
+        "merchantId": 10,
+        "merchantCode": "MCH_ALPHA_01",
+        "amount": 500.0000,
+        "currency": "INR",
+        "reason": "Customer item returned in good condition",
+        "status": "SUCCESS",
+        "providerRefundId": "sim_ref_9a87bc12d34e56",
+        "failureCode": null,
+        "failureMessage": null,
+        "requestedAt": "2026-11-05T03:00:00.000Z",
+        "processedAt": "2026-11-05T03:00:00.040Z",
+        "createdAt": "2026-11-05T03:00:00.000Z",
+        "updatedAt": "2026-11-05T03:00:00.040Z",
+        "idempotentReplay": false
+      }
+    }
+    ```
+  - **HTTP 200 OK (Idempotent Replay):** Exact duplicate refund request replayed without re-charging or double-decrementing balances.
+  - **HTTP 202 Accepted:** In-flight concurrent request with identical key currently processing.
+  - **HTTP 400 Bad Request:** 
+    - `REFUND_VALIDATION_ERROR`: Missing or non-positive amount.
+    - `CURRENCY_MISMATCH`: Currency does not match parent payment currency.
+    - `PAYMENT_NOT_REFUNDABLE`: Payment is not in `SUCCESS` or `PARTIALLY_REFUNDED` state.
+    - `EXCEEDED_REFUNDABLE_AMOUNT`: Requested amount exceeds remaining available refundable balance (`Original - SettledRefunds - ReservedPending`).
+  - **HTTP 409 Conflict:** `IDEMPOTENCY_CONFLICT` (reusing key with different refund payload).
+
+### 6.2 Get Refundable Balance for Payment
+- **Endpoint:** `GET /api/v1/payments/{paymentReference}/refundable-amount`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Refundable amount calculated",
+    "data": {
+      "paymentReference": "pay_64557f2597dd49b99de4",
+      "originalAmount": 1499.5000,
+      "totalRefundedAmount": 500.0000,
+      "pendingRefundAmount": 0.0000,
+      "remainingRefundableAmount": 999.5000,
+      "currency": "INR",
+      "isRefundable": true
+    }
+  }
+  ```
+
+### 6.3 List Merchant Refunds
+- **Endpoint:** `GET /api/v1/refunds?status=SUCCESS&search=ref_9a&page=0&size=10&sortBy=createdAt&sortDirection=desc`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Response (200 OK):** Paged collection of merchant refunds.
+
+### 6.4 Get Refund Details
+- **Endpoint:** `GET /api/v1/refunds/{refundReference}`
+- **Access:** Merchant / Admin
+- **Response (200 OK):** Detailed refund record with parent payment references.
+
+### 6.5 List Refunds for a Specific Payment
+- **Endpoint:** `GET /api/v1/payments/{paymentReference}/refunds`
+- **Access:** Merchant / Admin
+- **Response (200 OK):** Array of all refunds issued against the specified payment.
+
+### 6.6 Verify / Reconcile Indeterminate Refund
+- **Endpoint:** `POST /api/v1/refunds/{refundReference}/verify`
+- **Access:** Merchant / Admin
+- **Description:** Actively queries downstream provider for a refund in `UNKNOWN` state. If provider confirms success, balance is decremented from reserved to settled; if provider confirms failure, reserved amount is unlocked.
+
+### 6.7 Admin Refund Governance Endpoints
+- **List All System Refunds:** `GET /api/v1/admin/refunds?merchantId=10&status=UNKNOWN&page=0&size=20`
+- **Admin Get Refund:** `GET /api/v1/admin/refunds/{refundReference}`
+- **Admin Force Reconcile:** `POST /api/v1/admin/refunds/{refundReference}/verify`
+
+---
+
+## 7. Unified Transaction History Endpoints (`/api/v1/transactions`)
+
+### 7.1 Merchant Transaction History Ledger
+- **Endpoint:** `GET /api/v1/transactions`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Query Parameters:**
+  - `type`: Filter by `PAYMENT` or `REFUND`
+  - `status`: Filter by state (e.g. `SUCCESS`, `PARTIALLY_REFUNDED`, `REFUNDED`, `FAILED`)
+  - `startDate` / `endDate`: ISO-8601 date filters (e.g. `2026-11-01T00:00:00Z`)
+  - `search`: Search substring against references and memos
+  - `page`: 0-indexed page number (default: 0)
+  - `size`: Page size limit (default: 20)
+  - `sortBy`: Field to sort on (e.g. `createdAt`, `amount`)
+  - `sortDirection`: `ASC` or `DESC` (default: `DESC`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Transactions retrieved successfully",
+    "data": {
+      "content": [
+        {
+          "transactionId": "REF_1",
+          "transactionReference": "ref_9a87bc12d34e56",
+          "parentReference": "pay_64557f2597dd49b99de4",
+          "merchantId": 10,
+          "type": "REFUND",
+          "amount": 500.0000,
+          "currency": "INR",
+          "status": "SUCCESS",
+          "description": "Customer item returned in good condition",
+          "createdAt": "2026-11-05T03:00:00.000Z",
+          "processedAt": "2026-11-05T03:00:00.040Z"
+        },
+        {
+          "transactionId": "PAY_1",
+          "transactionReference": "pay_64557f2597dd49b99de4",
+          "parentReference": "pay_64557f2597dd49b99de4",
+          "merchantId": 10,
+          "type": "PAYMENT",
+          "amount": 1499.5000,
+          "currency": "INR",
+          "status": "PARTIALLY_REFUNDED",
+          "description": "Order #9021 payment",
+          "createdAt": "2026-11-05T02:00:00.000Z",
+          "processedAt": "2026-11-05T02:00:00.050Z"
+        }
+      ],
+      "pageNumber": 0,
+      "pageSize": 20,
+      "totalElements": 2,
+      "totalPages": 1,
+      "first": true,
+      "last": true
+    }
+  }
+  ```
+
+### 7.2 Admin Global Transaction History Ledger
+- **Endpoint:** `GET /api/v1/admin/transactions`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** Supports all merchant parameters plus `merchantId` filtering across all tenants in the platform.

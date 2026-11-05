@@ -156,6 +156,69 @@ Client             PayCore API           Redis / MySQL         PaymentProvider
 
 ---
 
+
+### 3.2 Refund Processing Sequence (Two-Phase Zero-DB Network I/O & Reservation)
+
+```
+Merchant Client       PayCore API          MySQL DB (Payments/Refunds)       PaymentProvider
+      │                    │                            │                           │
+      │ POST /v1/payments/ │                            │                           │
+      │   {ref}/refunds    │                            │                           │
+      │ Idempotency-Key    │                            │                           │
+      │───────────────────>│                            │                           │
+      │                    │ Check Idempotency          │                           │
+      │                    │───────────────────────────>│                           │
+      │                    │ New Request / Lock Acquired│                           │
+      │                    │<───────────────────────────│                           │
+      │                    │                            │                           │
+      │                    │ [Phase 1: DB TX 1 - PESSIMISTIC LOCK & RESERVATION]    │
+      │                    │ SELECT * FROM payments WHERE payment_ref=? FOR UPDATE  │
+      │                    │ Check: amount <= (original - refunded - reserved)     │
+      │                    │ UPDATE payments SET amount_refund_reserved += amount   │
+      │                    │ INSERT INTO refunds (status=PROCESSING)                │
+      │                    │ COMMIT TX 1                │                           │
+      │                    │───────────────────────────>│                           │
+      │                    │ DB TX 1 Committed          │                           │
+      │                    │<───────────────────────────│                           │
+      │                    │                            │                           │
+      │                    │ [Phase 2: Remote Provider Refund (OUTSIDE ANY DB TX)]  │
+      │                    │ POST /provider/refunds     │                           │
+      │                    │───────────────────────────────────────────────────────>│
+      │                    │                                                        │
+      │                    │ [Case A: Provider Refund SUCCESS]                      │
+      │                    │ HTTP 200 { status: SUCCESS, provider_refund_id }       │
+      │                    │<───────────────────────────────────────────────────────│
+      │                    │                                                        │
+      │                    │ [Phase 3: DB TX 2 - SETTLEMENT FINALIZATION]           │
+      │                    │ SELECT * FROM payments WHERE id=? FOR UPDATE           │
+      │                    │ UPDATE payments SET                                    │
+      │                    │   amount_refund_reserved -= amount,                    │
+      │                    │   amount_refunded += amount,                           │
+      │                    │   status = (remaining == 0 ? REFUNDED : PARTIAL)       │
+      │                    │ UPDATE refunds SET status=SUCCESS, provider_ref        │
+      │                    │ INSERT IdempotencyRecord (COMPLETED, response_body)    │
+      │                    │ COMMIT TX 2                │                           │
+      │                    │───────────────────────────>│                           │
+      │                    │ DB TX 2 Committed          │                           │
+      │                    │<───────────────────────────│                           │
+      │ HTTP 201 Created   │                            │                           │
+      │ { status: SUCCESS }│                            │                           │
+      │<───────────────────│                            │                           │
+      │                    │                                                        │
+      │                    │ [Case B: Provider Network Timeout / UNKNOWN]           │
+      │                    │ TimeoutException (SocketTimeout / Provider Hang)       │
+      │                    │<───────────────────────────────────────────────────────│
+      │                    │                                                        │
+      │                    │ [Phase 3: DB TX 2 - PRESERVE RESERVATION SAFELY]       │
+      │                    │ UPDATE refunds SET status=UNKNOWN                      │
+      │                    │ Note: amount_refund_reserved REMAINS RESERVED          │
+      │                    │ COMMIT TX 2                │                           │
+      │                    │───────────────────────────>│                           │
+      │ HTTP 202 Accepted  │                            │                           │
+      │ { status: UNKNOWN }│                            │                           │
+      │<───────────────────│                            │                           │
+```
+
 ## 4. Failure Scenarios & Mitigations
 
 ### 4.1 Idempotency Architecture & 6 Critical Cases
