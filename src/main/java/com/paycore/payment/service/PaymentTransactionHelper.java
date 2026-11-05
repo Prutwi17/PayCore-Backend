@@ -1,5 +1,8 @@
 package com.paycore.payment.service;
 
+import com.paycore.event.model.EventType;
+import com.paycore.event.model.PayCoreEventBuilder;
+import com.paycore.event.outbox.OutboxService;
 import com.paycore.merchant.entity.Merchant;
 import com.paycore.merchant.entity.MerchantStatus;
 import com.paycore.merchant.repository.MerchantRepository;
@@ -29,6 +32,8 @@ import java.util.Set;
  * 1. Initial creation and status transition to PROCESSING (Transaction 1).
  * 2. Downstream payment provider network invocation (ZERO ACTIVE DB TRANSACTIONS).
  * 3. Provider outcome persistence (Transaction 2).
+ * 
+ * Atomically stores transactional outbox events to guarantee at-least-once asynchronous event delivery.
  */
 @Component
 public class PaymentTransactionHelper {
@@ -43,17 +48,20 @@ public class PaymentTransactionHelper {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final MerchantRepository merchantRepository;
     private final PaymentStateMachine paymentStateMachine;
+    private final OutboxService outboxService;
 
     public PaymentTransactionHelper(
             PaymentRepository paymentRepository,
             PaymentAttemptRepository paymentAttemptRepository,
             MerchantRepository merchantRepository,
-            PaymentStateMachine paymentStateMachine
+            PaymentStateMachine paymentStateMachine,
+            OutboxService outboxService
     ) {
         this.paymentRepository = paymentRepository;
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.merchantRepository = merchantRepository;
         this.paymentStateMachine = paymentStateMachine;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -99,10 +107,16 @@ public class PaymentTransactionHelper {
         payment.addAttempt(attempt);
         Payment savedPayment = paymentRepository.save(payment);
 
+        // Record outbox event: PAYMENT_CREATED
+        outboxService.recordEvent(PayCoreEventBuilder.fromPayment(savedPayment, EventType.PAYMENT_CREATED));
+
         // Transition CREATED -> PROCESSING
         paymentStateMachine.validateTransition(savedPayment.getStatus(), PaymentStatus.PROCESSING);
         savedPayment.setStatus(PaymentStatus.PROCESSING);
         savedPayment = paymentRepository.saveAndFlush(savedPayment);
+
+        // Record outbox event: PAYMENT_PROCESSING
+        outboxService.recordEvent(PayCoreEventBuilder.fromPayment(savedPayment, EventType.PAYMENT_PROCESSING));
 
         PaymentAttempt savedAttempt = savedPayment.getAttempts().get(0);
 
@@ -149,6 +163,12 @@ public class PaymentTransactionHelper {
         paymentAttemptRepository.save(attempt);
         Payment updated = paymentRepository.saveAndFlush(payment);
 
+        // Record terminal/outcome outbox event
+        EventType eventType = resolveEventType(updated.getStatus());
+        if (eventType != null) {
+            outboxService.recordEvent(PayCoreEventBuilder.fromPayment(updated, eventType));
+        }
+
         log.info("Transaction 2 committed: Payment [{}] finalized with status [{}]",
                 updated.getPaymentReference(), updated.getStatus());
 
@@ -183,7 +203,14 @@ public class PaymentTransactionHelper {
             payment.setProcessedAt(Instant.now());
         }
 
-        return paymentRepository.saveAndFlush(payment);
+        Payment saved = paymentRepository.saveAndFlush(payment);
+
+        EventType eventType = resolveEventType(saved.getStatus());
+        if (eventType != null) {
+            outboxService.recordEvent(PayCoreEventBuilder.fromPayment(saved, eventType));
+        }
+
+        return saved;
     }
 
     /**
@@ -200,7 +227,23 @@ public class PaymentTransactionHelper {
         payment.setFailureMessage(reason != null ? reason : "Payment cancelled by merchant request");
         payment.setProcessedAt(Instant.now());
 
-        return paymentRepository.saveAndFlush(payment);
+        Payment saved = paymentRepository.saveAndFlush(payment);
+
+        outboxService.recordEvent(PayCoreEventBuilder.fromPayment(saved, EventType.PAYMENT_CANCELLED));
+
+        return saved;
+    }
+
+    private EventType resolveEventType(PaymentStatus status) {
+        return switch (status) {
+            case SUCCESS -> EventType.PAYMENT_SUCCESS;
+            case FAILED -> EventType.PAYMENT_FAILED;
+            case UNKNOWN -> EventType.PAYMENT_UNKNOWN;
+            case CANCELLED -> EventType.PAYMENT_CANCELLED;
+            case PROCESSING -> EventType.PAYMENT_PROCESSING;
+            case CREATED -> EventType.PAYMENT_CREATED;
+            default -> null;
+        };
     }
 
     private void handleProviderError(Payment payment, PaymentAttempt attempt, Throwable error) {
@@ -260,8 +303,8 @@ public class PaymentTransactionHelper {
             default:
                 paymentStateMachine.validateTransition(payment.getStatus(), PaymentStatus.UNKNOWN);
                 payment.setStatus(PaymentStatus.UNKNOWN);
-                payment.setFailureCode("PROVIDER_UNKNOWN");
-                payment.setFailureMessage(response.getResponseMessage());
+                payment.setFailureCode(response.getResponseCode() != null ? response.getResponseCode() : "UNKNOWN_OUTCOME");
+                payment.setFailureMessage(response.getResponseMessage() != null ? response.getResponseMessage() : "Provider outcome uncertain");
                 payment.setProcessedAt(Instant.now());
                 attempt.setStatus(PaymentAttemptStatus.UNKNOWN);
                 break;
@@ -281,7 +324,6 @@ public class PaymentTransactionHelper {
 
         try {
             Currency currency = Currency.getInstance(normalizedCurrency);
-            int maxFractionDigits = currency.getDefaultFractionDigits();
             if (amount.scale() > 4) {
                 throw new PaymentValidationException(
                         String.format("Amount precision [%s] exceeds maximum allowed decimal places (4)", amount.scale())

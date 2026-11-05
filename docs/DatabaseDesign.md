@@ -257,56 +257,128 @@ JOIN payments p ON r.payment_id = p.id;
 ---
 
 ### 2.10 Table: `webhook_endpoints`
-Stores merchant webhook listener configurations.
+Stores merchant webhook listener configurations with encrypted secrets and subscription filters.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Endpoint ID |
-| `merchant_id` | BIGINT | NOT NULL, FK(`merchants.id`) | Owning merchant |
+| `endpoint_reference` | VARCHAR(64) | NOT NULL, UNIQUE | External reference (`wh_...`) |
+| `merchant_id` | BIGINT | NOT NULL, INDEX | Owning merchant |
 | `url` | VARCHAR(1024) | NOT NULL | Target HTTPS callback URL |
-| `secret_key` | VARCHAR(128) | NOT NULL | HMAC signing secret (`whsec_...`) |
-| `subscribed_events` | JSON | NOT NULL | Array of subscribed event names |
-| `status` | VARCHAR(30) | NOT NULL DEFAULT 'ACTIVE' | `ACTIVE`, `DISABLED` |
-| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Creation timestamp |
+| `secret_hash` | VARCHAR(255) | NOT NULL | SHA-256 hash of secret for integrity verification |
+| `secret_prefix` | VARCHAR(16) | NOT NULL DEFAULT 'whsec_' | Secret prefix indicator |
+| `secret_encrypted` | VARCHAR(255) | NOT NULL | Reversibly encrypted secret for worker HMAC signing |
+| `subscribed_events` | VARCHAR(1000) | NOT NULL DEFAULT '*' | Comma-delimited list of subscribed event types |
+| `status` | VARCHAR(32) | NOT NULL DEFAULT 'ACTIVE' | `ACTIVE`, `INACTIVE`, `DISABLED` |
+| `description` | VARCHAR(255) | NULL | Merchant endpoint note/label |
+| `failure_count` | INT | NOT NULL DEFAULT 0 | Consecutive delivery failure counter |
+| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Registration timestamp |
+| `updated_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Last modified timestamp |
+| `version` | BIGINT | NOT NULL DEFAULT 0 | Optimistic concurrency control |
+
+*Indexes:*
+- `idx_webhook_endpoints_merchant` ON `webhook_endpoints(merchant_id, status)`
+- `idx_webhook_endpoints_ref` ON `webhook_endpoints(endpoint_reference)`
 
 ---
 
 ### 2.11 Table: `webhook_events`
-Immutable record of all published domain events.
+Immutable record of all published domain events for outbound fanout.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Internal event ID |
-| `event_id` | VARCHAR(64) | NOT NULL, UNIQUE | Public event ID (`evt_1F3D20`) |
-| `merchant_id` | BIGINT | NOT NULL, FK(`merchants.id`) | Target merchant |
-| `event_type` | VARCHAR(64) | NOT NULL | e.g. `payment.success`, `refund.processed` |
-| `payload` | LONGTEXT | NOT NULL | Full serialized event JSON |
+| `event_reference` | VARCHAR(64) | NOT NULL, UNIQUE | Public event ID (`wevt_...`) |
+| `merchant_id` | BIGINT | NOT NULL | Target merchant |
+| `event_type` | VARCHAR(64) | NOT NULL | e.g. `PAYMENT_SUCCESS`, `REFUND_SUCCESS` |
+| `aggregate_id` | VARCHAR(64) | NOT NULL | Aggregate reference (`PAY_...`, `REF_...`) |
+| `payload` | LONGTEXT | NOT NULL | Full serialized domain event JSON |
 | `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Event creation timestamp |
 
 *Indexes:*
+- `idx_webhook_events_ref` ON `webhook_events(event_reference)`
 - `idx_webhook_events_merchant` ON `webhook_events(merchant_id, created_at DESC)`
-- `idx_webhook_events_type` ON `webhook_events(event_type)`
 
 ---
 
 ### 2.12 Table: `webhook_delivery_attempts`
-Tracks individual HTTP POST attempts to merchant endpoints.
+Tracks individual HTTP POST attempts to merchant endpoints with execution metrics and backoff scheduling.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Attempt ID |
-| `event_id` | BIGINT | NOT NULL, FK(`webhook_events.id`) | Associated event |
+| `attempt_reference` | VARCHAR(64) | NOT NULL, UNIQUE | Public attempt reference (`wdel_...`) |
+| `webhook_event_id` | BIGINT | NOT NULL, FK(`webhook_events.id`) | Associated event |
 | `endpoint_id` | BIGINT | NOT NULL, FK(`webhook_endpoints.id`) | Destination URL config |
-| `attempt_number` | INT | NOT NULL | Attempt counter (1 to 5) |
-| `response_status` | INT | NULL | HTTP response code (e.g. 200, 500) |
-| `response_body` | TEXT | NULL | Truncated response snippet |
-| `status` | VARCHAR(32) | NOT NULL | `PENDING`, `SUCCESS`, `RETRYING`, `FAILED_DLQ` |
+| `merchant_id` | BIGINT | NOT NULL | Merchant identifier |
+| `attempt_number` | INT | NOT NULL DEFAULT 1 | Attempt counter (1 to 5) |
+| `delivery_status` | VARCHAR(32) | NOT NULL DEFAULT 'PENDING' | `PENDING`, `SUCCESS`, `RETRYING`, `FAILED`, `DEAD_LETTER` |
+| `http_status_code` | INT | NULL | HTTP response code (e.g. 200, 500, 404, 0 for timeout) |
+| `request_url` | VARCHAR(1024) | NOT NULL | Exact URL POSTed to |
+| `response_body` | TEXT | NULL | Truncated response snippet (first 1000 chars) |
+| `execution_duration_ms` | BIGINT | NULL | HTTP round-trip latency in milliseconds |
 | `next_retry_at` | DATETIME(6) | NULL | Timestamp for scheduled retry |
-| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Dispatch timestamp |
+| `failure_reason` | TEXT | NULL | Error summary (SSRF rejected, timeout, 5xx) |
+| `attempted_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Attempt execution timestamp |
+| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Record creation timestamp |
+| `version` | BIGINT | NOT NULL DEFAULT 0 | Optimistic concurrency control |
+
+*Indexes:*
+- `idx_webhook_delivery_ref` ON `webhook_delivery_attempts(attempt_reference)`
+- `idx_webhook_delivery_status` ON `webhook_delivery_attempts(delivery_status, next_retry_at)`
+- `idx_webhook_delivery_endpoint` ON `webhook_delivery_attempts(endpoint_id, attempted_at DESC)`
+- `idx_webhook_delivery_merchant` ON `webhook_delivery_attempts(merchant_id, delivery_status)`
 
 ---
 
-### 2.13 Tables: `reconciliation_batches` & `reconciliation_records`
+### 2.13 Table: `outbox_events`
+Transactional Outbox table ensuring atomic persistence with business entity state transitions.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Internal outbox event ID |
+| `event_id` | VARCHAR(64) | NOT NULL, UNIQUE | Unique event ID (`evt_...`) |
+| `aggregate_type` | VARCHAR(64) | NOT NULL | `PAYMENT`, `REFUND` |
+| `aggregate_id` | VARCHAR(64) | NOT NULL | Aggregate reference (used as Kafka partition key) |
+| `event_type` | VARCHAR(64) | NOT NULL | Canonical event type name |
+| `merchant_id` | BIGINT | NOT NULL | Tenant ID |
+| `payload` | LONGTEXT | NOT NULL | Sanitized JSON domain event |
+| `status` | VARCHAR(32) | NOT NULL DEFAULT 'PENDING' | `PENDING`, `PUBLISHED`, `FAILED` |
+| `retry_count` | INT | NOT NULL DEFAULT 0 | Outbox publisher retry attempts |
+| `last_error` | TEXT | NULL | Exception message during Kafka send |
+| `created_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Transaction commit timestamp |
+| `published_at` | DATETIME(6) | NULL | Broker ACK timestamp |
+| `version` | BIGINT | NOT NULL DEFAULT 0 | Optimistic concurrency lock |
+
+*Indexes:*
+- `idx_outbox_events_status` ON `outbox_events(status, created_at)`
+- `idx_outbox_events_event_id` ON `outbox_events(event_id)`
+- `idx_outbox_events_aggregate` ON `outbox_events(aggregate_type, aggregate_id)`
+
+---
+
+### 2.14 Table: `inbox_events`
+Consumer inbox table enforcing idempotent processing under at-least-once message delivery.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | BIGINT AUTO_INCREMENT | PRIMARY KEY | Internal inbox ID |
+| `event_id` | VARCHAR(64) | NOT NULL | Domain event UUID |
+| `consumer_name` | VARCHAR(128) | NOT NULL | e.g. `PaymentEventConsumer`, `RefundEventConsumer` |
+| `event_type` | VARCHAR(64) | NOT NULL | Domain event type |
+| `processing_status` | VARCHAR(32) | NOT NULL DEFAULT 'RECEIVED' | `RECEIVED`, `PROCESSING`, `PROCESSED`, `FAILED` |
+| `error_message` | TEXT | NULL | Processing error details |
+| `received_at` | DATETIME(6) | NOT NULL DEFAULT CURRENT_TIMESTAMP(6) | Message receipt timestamp |
+| `processed_at` | DATETIME(6) | NULL | Business completion timestamp |
+| `version` | BIGINT | NOT NULL DEFAULT 0 | Optimistic concurrency control |
+
+*Constraints & Indexes:*
+- `uk_inbox_event_consumer` UNIQUE (`event_id`, `consumer_name`) — Guaranteed idempotent insertion barrier
+- `idx_inbox_events_status` ON `inbox_events(processing_status, received_at)`
+
+---
+
+### 2.15 Tables: `reconciliation_batches` & `reconciliation_records`
 Manages daily settlement reconciliation audits.
 
 | Table | Column | Type | Constraints |
@@ -331,7 +403,7 @@ Manages daily settlement reconciliation audits.
 
 ---
 
-### 2.14 Table: `audit_logs`
+### 2.16 Table: `audit_logs`
 Immutable system audit trail.
 
 | Column | Type | Constraints | Description |
@@ -348,7 +420,7 @@ Immutable system audit trail.
 
 ---
 
-### 2.15 Table: `notifications`
+### 2.17 Table: `notifications`
 In-app notifications for portal operators.
 
 | Column | Type | Constraints | Description |

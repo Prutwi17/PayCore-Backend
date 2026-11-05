@@ -403,3 +403,89 @@
 - **Endpoint:** `GET /api/v1/admin/transactions`
 - **Access:** Admin (`ROLE_ADMIN` only)
 - **Query Parameters:** Supports all merchant parameters plus `merchantId` filtering across all tenants in the platform.
+
+---
+
+## 8. Webhook & Asynchronous Event Endpoints (`/api/v1/webhooks`, `/api/v1/admin/webhooks`)
+
+### 8.1 Register Webhook Endpoint
+- **Endpoint:** `POST /api/v1/webhooks/endpoints`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Request Body:**
+  ```json
+  {
+    "url": "https://api.store.com/webhooks/paycore",
+    "subscribedEvents": "PAYMENT_SUCCESS,REFUND_SUCCESS",
+    "description": "Production Webhook Receiver"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Webhook endpoint registered successfully",
+    "data": {
+      "id": 1,
+      "endpointReference": "wh_4f9a0c1e82bc",
+      "merchantId": 10,
+      "url": "https://api.store.com/webhooks/paycore",
+      "maskedSecret": "whsec_****************",
+      "secret": "whsec_48a9f2bc10de93c85710294817592830...",
+      "subscribedEvents": "PAYMENT_SUCCESS,REFUND_SUCCESS",
+      "status": "ACTIVE",
+      "description": "Production Webhook Receiver",
+      "failureCount": 0,
+      "createdAt": "2026-11-05T06:00:00.000Z",
+      "updatedAt": "2026-11-05T06:00:00.000Z"
+    }
+  }
+  ```
+  *(Note: The `secret` field is revealed only once upon registration or secret rotation).*
+
+### 8.2 List Merchant Webhook Endpoints
+- **Endpoint:** `GET /api/v1/webhooks/endpoints`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+
+### 8.3 Rotate Endpoint Secret
+- **Endpoint:** `POST /api/v1/webhooks/endpoints/{endpointReference}/rotate-secret`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+
+### 8.4 List Webhook Delivery History
+- **Endpoint:** `GET /api/v1/webhooks/deliveries`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+- **Query Parameters:** `status` (`SUCCESS`, `RETRYING`, `FAILED`, `DEAD_LETTER`), `page`, `size`
+
+### 8.5 Retry Webhook Delivery
+- **Endpoint:** `POST /api/v1/webhooks/deliveries/{attemptReference}/retry`
+- **Access:** Merchant (`ROLE_MERCHANT`, `ROLE_ADMIN`)
+
+### 8.6 Admin Webhook Pipeline Metrics
+- **Endpoint:** `GET /api/v1/admin/webhooks/metrics`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Pipeline metrics retrieved successfully",
+    "data": {
+      "pendingOutboxCount": 0,
+      "failedOutboxCount": 0,
+      "totalDeliveries": 120,
+      "successfulDeliveries": 118,
+      "failedDeliveries": 2,
+      "deadLetterDeliveries": 1,
+      "deliverySuccessRate": 98.33
+    }
+  }
+  ```
+
+### 8.7 Admin Outbox Inspection & Republish
+- **Endpoint:** `GET /api/v1/admin/webhooks/outbox` (List outbox entries by status)
+- **Endpoint:** `POST /api/v1/admin/webhooks/outbox/{eventId}/republish` (Force republish to Kafka)
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 8.8 Admin Inbox Consumers & Dead-Letter Replay
+- **Endpoint:** `GET /api/v1/admin/webhooks/inbox` (List inbox consumer processing records)
+- **Endpoint:** `GET /api/v1/admin/webhooks/deliveries/dead-letter` (List dead-letter deliveries)
+- **Endpoint:** `POST /api/v1/admin/webhooks/deliveries/{attemptReference}/replay` (Force redelivery attempt)
+- **Access:** Admin (`ROLE_ADMIN` only)

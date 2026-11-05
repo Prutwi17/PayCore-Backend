@@ -128,33 +128,76 @@ erDiagram
 
     webhook_endpoints {
         BIGINT id PK
-        BIGINT merchant_id FK
+        VARCHAR endpoint_reference UK
+        BIGINT merchant_id
         VARCHAR url
-        VARCHAR secret_key
-        JSON subscribed_events
+        VARCHAR secret_hash
+        VARCHAR secret_prefix
+        VARCHAR secret_encrypted
+        VARCHAR subscribed_events
         VARCHAR status
+        VARCHAR description
+        INT failure_count
         DATETIME created_at
+        DATETIME updated_at
+        BIGINT version
     }
 
     webhook_events {
         BIGINT id PK
-        VARCHAR event_id UK
-        BIGINT merchant_id FK
+        VARCHAR event_reference UK
+        BIGINT merchant_id
         VARCHAR event_type
+        VARCHAR aggregate_id
         LONGTEXT payload
         DATETIME created_at
     }
 
     webhook_delivery_attempts {
         BIGINT id PK
-        BIGINT event_id FK
+        VARCHAR attempt_reference UK
+        BIGINT webhook_event_id FK
         BIGINT endpoint_id FK
+        BIGINT merchant_id
         INT attempt_number
-        INT response_status
+        VARCHAR delivery_status
+        INT http_status_code
+        VARCHAR request_url
         TEXT response_body
-        VARCHAR status
+        BIGINT execution_duration_ms
         DATETIME next_retry_at
+        TEXT failure_reason
+        DATETIME attempted_at
         DATETIME created_at
+        BIGINT version
+    }
+
+    outbox_events {
+        BIGINT id PK
+        VARCHAR event_id UK
+        VARCHAR aggregate_type
+        VARCHAR aggregate_id
+        VARCHAR event_type
+        BIGINT merchant_id
+        LONGTEXT payload
+        VARCHAR status
+        INT retry_count
+        TEXT last_error
+        DATETIME created_at
+        DATETIME published_at
+        BIGINT version
+    }
+
+    inbox_events {
+        BIGINT id PK
+        VARCHAR event_id
+        VARCHAR consumer_name
+        VARCHAR event_type
+        VARCHAR processing_status
+        TEXT error_message
+        DATETIME received_at
+        DATETIME processed_at
+        BIGINT version
     }
 
     reconciliation_batches {
@@ -221,6 +264,7 @@ erDiagram
 
     webhook_events ||--o{ webhook_delivery_attempts : "dispatched_via"
     webhook_endpoints ||--o{ webhook_delivery_attempts : "receives"
+    merchants ||--o{ outbox_events : "publishes"
 
     reconciliation_batches ||--o{ reconciliation_records : "contains"
 ```

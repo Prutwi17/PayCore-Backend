@@ -107,21 +107,24 @@ To build PayCore with uncompromising engineering quality, development proceeds t
 
 ---
 
-### Milestone 6: Webhooks, Kafka, & Asynchronous Processing
-- **Objective:** Decouple event publishing from request handling using Apache Kafka, implement merchant webhook subscription management, HMAC-SHA256 payload signing, and exponential backoff retry with Dead Letter Queue (DLQ).
+### Milestone 6: Webhooks, Kafka, & Asynchronous Processing [COMPLETED]
+- **Objective:** Decouple event publishing from request handling using Apache Kafka and the Transactional Outbox pattern, implement merchant webhook subscription management with SSRF protections, canonical HMAC-SHA256 payload signing, idempotent consumer inboxes, exponential backoff retries, and dead-letter quarantine (DLQ) with admin governance.
 - **Backend Deliverables:**
-  - JPA entities: `WebhookEndpoint`, `WebhookEvent`, `WebhookDeliveryAttempt`.
-  - Kafka topics: `paycore.payment.events`, `paycore.webhook.dispatch`, `paycore.webhook.dispatch.retry`, `paycore.webhook.dispatch.dlq`.
-  - Outbound HMAC-SHA256 payload signing (`X-PayCore-Signature`).
-  - Worker consumer with exponential backoff (1s, 5s, 30s, 300s, 1800s) and DLQ routing.
-  - Endpoints: `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/events`, `POST /api/v1/webhooks/deliveries/{id}/retry`.
+  - Transactional Outbox: `OutboxEvent` entity and `OutboxPublisherScheduler` guaranteeing atomic event persistence alongside entity mutations and at-least-once Kafka publication.
+  - Apache Kafka topics: `paycore.payment.events`, `paycore.refund.events`, `paycore.webhook.events`, plus dedicated `.dlq` topics (`.dlq`).
+  - Idempotent Inboxes: `inbox_events` table with unique constraint `(event_id, consumer_name)` preventing duplicate execution across `PaymentEventConsumer` and `RefundEventConsumer`.
+  - Multi-Layer SSRF Defense: `WebhookSsrfValidator` rejecting loopback, RFC-1918, link-local metadata, multicast, and redirects.
+  - Canonical HMAC-SHA256 Signatures: `X-PayCore-Signature: t={timestamp},v1={hash}` and `X-PayCore-Event` with constant-time verification.
+  - Webhook Delivery Worker: HTTP POST worker with latency tracking, retry classification (retryable 5xx, 429 vs non-retryable 4xx, SSRF), exponential backoff (`5s, 30s, 120s, 900s, 3600s`), and dead-letter quarantine.
+  - Endpoints: `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints`, `PUT /api/v1/webhooks/endpoints/{ref}`, `PATCH /api/v1/webhooks/endpoints/{ref}/status`, `POST /api/v1/webhooks/endpoints/{ref}/rotate-secret`, `DELETE /api/v1/webhooks/endpoints/{ref}`, `GET /api/v1/webhooks/deliveries`, `POST /api/v1/webhooks/deliveries/{ref}/retry`, and comprehensive `/admin/webhooks/*` governance endpoints.
 - **Frontend Deliverables:**
-  - Merchant Webhooks page: Configured endpoints, signing secrets, delivery logs with HTTP status codes and payloads.
-  - Manual retry button for failed webhook deliveries.
+  - Merchant Webhooks page (`/merchant/webhooks`): Dual-tab interface for Endpoints (CRUD, active toggle, single-exposure secret reveal modal, secret rotation, copy guide) and Delivery History (attempt logs, status badges, inspection modal, manual retry).
+  - Admin Webhook Pipeline Governance (`/admin/webhooks`): KPI telemetry cards, All Deliveries multi-tenant explorer, Dead-Letter Queue quarantine with Replay, Outbox monitor with Force Republish, and Inbox Consumer duplicate detection telemetry.
+  - Fully wired routes, sidebar navigation, and 0-warning production bundle.
 - **Verification Criteria:**
-  - Webhook dispatched asynchronously upon payment success.
-  - Failed HTTP delivery triggers backoff retries and lands in DLQ after 5 failed attempts.
-  - HMAC signature verified against test merchant verification script.
+  - Unit and integration tests for signing, SSRF validation, endpoint management, delivery retries, and inbox idempotency.
+  - TypeScript compilation and ESLint pass with 0 errors, 0 warnings.
+  - Vite production bundle builds cleanly.
 
 ---
 

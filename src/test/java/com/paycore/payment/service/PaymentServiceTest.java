@@ -1,6 +1,7 @@
 package com.paycore.payment.service;
 
 import com.paycore.common.exception.ResourceNotFoundException;
+import com.paycore.event.outbox.OutboxService;
 import com.paycore.merchant.entity.Merchant;
 import com.paycore.merchant.entity.MerchantStatus;
 import com.paycore.merchant.repository.MerchantRepository;
@@ -51,7 +52,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         stateMachine = new PaymentStateMachine();
-        transactionHelper = new PaymentTransactionHelper(paymentRepository, paymentAttemptRepository, merchantRepository, stateMachine);
+        transactionHelper = new PaymentTransactionHelper(paymentRepository, paymentAttemptRepository, merchantRepository, stateMachine, mock(OutboxService.class));
         simulatedProvider = new SimulatedPaymentProvider();
         providerFactory = new PaymentProviderFactory(List.of(simulatedProvider));
         paymentService = new PaymentService(paymentRepository, paymentAttemptRepository, transactionHelper, providerFactory, stateMachine, new PaymentRetryExecutor());

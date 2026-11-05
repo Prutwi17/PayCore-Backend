@@ -98,4 +98,27 @@ Zero hardcoded credentials in source code. All secrets are injected through OS e
 ### 8.2 Concurrency Exploits & Over-Refund Prevention
 - **Race Condition Immunity:** Concurrent refund requests attempting to collectively drain more than the payment's refundable balance are serialized using pessimistic write locks (`@Lock(LockModeType.PESSIMISTIC_WRITE)`) on the parent payment row.
 - **In-Flight Balance Reservation:** Available balance is decremented immediately via `payment.amountRefundReserved` during Phase 1 before calling external providers, eliminating race windows.
+
+---
+
+## 9. Server-Side Request Forgery (SSRF) & Webhook Security Architecture (Stage 6)
+
+### 9.1 Multi-Layer SSRF Defense
+Because merchants register arbitrary HTTP/HTTPS callback URLs, PayCore implements strict multi-layer SSRF validation in `WebhookSsrfValidator`:
+1. **Protocol Restriction:** Only `https` (and optionally `http` for local testing via configuration) schemes are permitted. File, FTP, Gopher, and raw IP protocols are strictly rejected.
+2. **DNS Resolution & Rebinding Mitigation:** Target hostnames are resolved to all bound `InetAddress` entries immediately prior to request execution.
+3. **Blacklisted IP Ranges:** Outbound requests are blocked if destination addresses fall into:
+   - **Loopback:** `127.0.0.0/8`, `::1`, `localhost`
+   - **RFC-1918 Private Ranges:** `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+   - **Link-Local & Cloud Metadata:** `169.254.0.0/16` (AWS/GCP/Azure IMDS metadata endpoints)
+   - **Multicast / Anycast / Carrier-Grade NAT:** `224.0.0.0/4`, `100.64.0.0/10`
+4. **Disabled Redirects:** `HttpClient` is configured with `Redirect.NEVER` to prevent open-redirect SSRF bypasses.
+
+### 9.2 Webhook Signing Secret Governance
+- **Generation:** Secrets are generated using cryptographically secure random bytes: `whsec_` + 64 hex characters (32 bytes entropy).
+- **Single-Exposure Policy:** Plaintext secrets are revealed **only once** upon creation or secret rotation.
+- **Storage:** Database stores a SHA-256 hash for integrity validation and reversible encryption for delivery worker HMAC computation. In all GET APIs, secrets are masked (`whsec_****************`).
+- **Signature Verification:** PayCore computes canonical signatures:
+  `X-PayCore-Signature: t={timestamp},v1={HMAC-SHA256(secret, timestamp + "." + body)}`.
+  Constant-time string comparison (`MessageDigest.isEqual`) is enforced to prevent timing attacks.
 - **Replay & Tampering Protection:** Idempotency keys are bound to canonical SHA-256 payload fingerprints. Key reuse with modified amounts or parameters is actively rejected with HTTP 409 Conflict.
