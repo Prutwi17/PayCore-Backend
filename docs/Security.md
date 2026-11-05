@@ -85,3 +85,17 @@ Zero hardcoded credentials in source code. All secrets are injected through OS e
 - Allowed methods: `GET, POST, PUT, DELETE, OPTIONS`.
 - Allowed headers: `Authorization, Content-Type, X-Api-Key, Idempotency-Key, X-Requested-With`.
 - Credentials allowed (`allowCredentials: true`).
+
+---
+
+## 8. Multi-Tenant Tenancy Isolation & Financial Race Condition Prevention
+
+### 8.1 Tenant Scoping & Resource Ownership
+- **Authorization Enforcement:** Every merchant request operates under an authenticated security context. The active `merchantId` is extracted securely from the verified JWT claims or API key record.
+- **Enumeration Prevention:** Attempting to query, refund, or reconcile a payment or refund belonging to another merchant returns `404 Not Found` (rather than 403 Forbidden) to eliminate resource ID enumeration.
+- **Administrative Governance:** System-wide queries and actions (`/api/v1/admin/*`) require authenticated users holding explicit `ROLE_ADMIN` authorities verified via Spring Security method and route guards.
+
+### 8.2 Concurrency Exploits & Over-Refund Prevention
+- **Race Condition Immunity:** Concurrent refund requests attempting to collectively drain more than the payment's refundable balance are serialized using pessimistic write locks (`@Lock(LockModeType.PESSIMISTIC_WRITE)`) on the parent payment row.
+- **In-Flight Balance Reservation:** Available balance is decremented immediately via `payment.amountRefundReserved` during Phase 1 before calling external providers, eliminating race windows.
+- **Replay & Tampering Protection:** Idempotency keys are bound to canonical SHA-256 payload fingerprints. Key reuse with modified amounts or parameters is actively rejected with HTTP 409 Conflict.

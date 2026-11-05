@@ -74,7 +74,23 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 4 Complete)
+## 🧪 Testing & Current Status (Stage 5 Complete)
+
+PayCore Stage 5 (Refund Management & Transaction History) is fully implemented, verified, and operational:
+
+- **Automated Tests:** **64 passing tests** across unit, service, state machine, idempotency, concurrent load, and MockMvc integration tests (0 failures, 0 errors).
+- **Refund State Machine & Strict Validation:** Full transition lifecycle (`REQUESTED` -> `PROCESSING` -> `SUCCESS`, `FAILED`, `UNKNOWN`) with non-positive amount rejection, currency mismatch rejection, and terminal state immutability.
+- **Two-Phase Zero-DB Network I/O & Balance Reservation:**
+  - *Phase 1 (DB TX):* Row-level pessimistic write lock on `Payment` (`@Lock(LockModeType.PESSIMISTIC_WRITE)`), checks `amount <= (original - refunded - reserved)`, atomically increments `amount_refund_reserved`, persists `Refund(PROCESSING)`, and commits transaction immediately.
+  - *Network I/O (No DB TX):* Dispatches refund to payment provider completely outside any database transaction or connection lock.
+  - *Phase 2 (DB TX):* Acquires lock, decrements `amount_refund_reserved`, increments `amount_refunded`, updates payment status to `PARTIALLY_REFUNDED` or `REFUNDED`, records provider refund ID, and commits.
+  - *Network Timeout Protection:* On timeout or socket drop, the reserved balance **remains safely reserved** to prevent concurrent over-refunding while marked `UNKNOWN`, awaiting authoritative verification.
+- **Refund Concurrency Proof:** Verified via `RefundConcurrencyIntegrationTest` with 10 simultaneous threads racing on a $100 payment attempting $20 refunds each: exactly 5 succeed ($100 settled), and 5 are safely rejected with zero over-refund.
+- **Refund Idempotency:** Full `Idempotency-Key` support for refunds with SHA-256 canonical payload fingerprinting, returning cached results on duplicate submissions (`Idempotent-Replay: true`) and rejecting altered payloads with HTTP 409 Conflict.
+- **Unified Transaction Ledger:** High-performance database-level `v_transactions` view combining payments and refunds into a single searchable, filterable, and paginated ledger via Spring Data JPA `@Entity @Immutable @Subselect`.
+- **Indeterminate Refund Status Verification:** Active provider status queries (`POST /api/v1/refunds/{ref}/verify`) to reconcile `UNKNOWN` refunds without double-crediting or manual database edits.
+
+## 🧪 Previous Stage 4 Details
 
 PayCore Stage 4 (Idempotency, Concurrency & Payment Reliability) is fully implemented, verified, and operational:
 

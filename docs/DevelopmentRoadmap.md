@@ -84,20 +84,26 @@ To build PayCore with uncompromising engineering quality, development proceeds t
 
 ---
 
-### Milestone 5: Refund Management & Transaction History
-- **Objective:** Implement full and partial refunds with refundable balance tracking, pessimistic row locking, and detailed transaction history.
+### Milestone 5: Refund Management & Transaction History [COMPLETED]
+- **Objective:** Build an enterprise-grade refund processing engine featuring full and partial refunds, remaining refundable balance calculations, pessimistic row locking on parent payments, in-flight balance reservation, Zero-DB Network I/O, refund idempotency with request fingerprinting, indeterminate status verification, and a unified immutable transaction history view.
 - **Backend Deliverables:**
-  - JPA entity: `Refund`.
-  - Validation: Cumulative refunds cannot exceed `payment.amount - payment.amount_refunded`.
-  - Concurrency safety: Pessimistic row locking (`SELECT * FROM payments FOR UPDATE`) during refund computation.
-  - Refund state machine: `REQUESTED` -> `PROCESSING` -> `SUCCESS` / `FAILED`.
-  - Endpoints: `POST /api/v1/refunds`, `GET /api/v1/refunds/{refundId}`, `GET /api/v1/refunds`.
+  - JPA entity: `Refund` with `refund_reference`, parent payment foreign key, `status` (`REQUESTED`, `PROCESSING`, `SUCCESS`, `FAILED`, `UNKNOWN`), optimistic locking `@Version`, and audit timestamps.
+  - Parent `Payment` fields: `amountRefunded`, `amountRefundReserved`, and state transitions to `PARTIALLY_REFUNDED` and `REFUNDED`.
+  - Two-Phase Zero-DB Network I/O & Balance Reservation: Phase 1 reserves funds and commits before external gateway call; Phase 2 finalizes state after provider returns; on timeouts, reserved funds stay locked to prevent race conditions.
+  - Refund Idempotency: `Idempotency-Key` support with SHA-256 fingerprinting, cached replay (`Idempotent-Replay: true`), and conflict detection (HTTP 409).
+  - Provider Abstraction: Added `initiateRefund` and `queryRefundStatus` to `PaymentProvider` and `SimulatedPaymentProvider` with deterministic triggers (`[SIM_FAIL]`, `[SIM_TIMEOUT]`).
+  - Unified Transaction Ledger: `v_transactions` database-level view combining payments and refunds with `TransactionHistoryController` and `AdminTransactionHistoryController`.
+  - Endpoints: `POST /api/v1/payments/{ref}/refunds`, `GET /api/v1/refunds`, `GET /api/v1/refunds/{ref}`, `GET /api/v1/payments/{ref}/refunds`, `GET /api/v1/payments/{ref}/refundable-amount`, `POST /api/v1/refunds/{ref}/verify`, `GET /api/v1/transactions`, and corresponding `/admin/*` endpoints.
 - **Frontend Deliverables:**
-  - Merchant Refunds page with "+ New Refund" modal and status indicators.
-  - Refund tab in Payment Details showing partial refund breakdown and remaining balance.
+  - Merchant Refunds page (`/merchant/refunds`): Metrics cards, filters, search, paginated table, details modal, and verify action.
+  - Merchant Transactions page (`/merchant/transactions`): Unified ledger with transaction type pills, status badges, date range filter, and pagination.
+  - In Payment Details: Live refundable balance widget, quick full/partial refund fill, full/partial warnings, and issued refund history table.
+  - Admin Refunds (`/admin/refunds`) & Admin Transactions (`/admin/transactions`) pages.
+  - Sidebar and router integration with clean active route styling.
 - **Verification Criteria:**
-  - Attempting to refund ₹1,100 on a ₹1,000 charge is rejected.
-  - Two partial refunds of ₹500 succeed, subsequent ₹100 refund fails.
+  - Full test suite: 64 passing automated tests (0 failures, 0 errors).
+  - 10-thread concurrency test on $100 payment attempting $20 refunds: exactly 5 succeed ($100 settled), 5 safely rejected.
+  - TypeScript build (`tsc && vite build`) and ESLint checks pass with 0 errors, 0 warnings.
 
 ---
 

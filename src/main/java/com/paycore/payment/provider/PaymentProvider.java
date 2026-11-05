@@ -25,4 +25,14 @@ public interface PaymentProvider {
      * Attempts cancellation of an in-flight or authorized payment at the provider.
      */
     PaymentProviderResponse cancelPayment(String providerTransactionId, String requestReference);
+
+    /**
+     * Initiates a refund attempt with the downstream provider.
+     */
+    PaymentProviderRefundResponse initiateRefund(PaymentProviderRefundRequest request);
+
+    /**
+     * Queries the provider for the authoritative status of a refund transaction.
+     */
+    PaymentProviderRefundResponse queryRefundStatus(String providerRefundId, String refundReference);
 }

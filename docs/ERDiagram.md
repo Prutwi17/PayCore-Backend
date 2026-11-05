@@ -67,6 +67,7 @@ erDiagram
         VARCHAR order_id
         DECIMAL amount
         DECIMAL amount_refunded
+        DECIMAL amount_refund_reserved
         VARCHAR currency
         VARCHAR status
         VARCHAR payment_method
@@ -108,7 +109,7 @@ erDiagram
 
     refunds {
         BIGINT id PK
-        VARCHAR refund_id UK
+        VARCHAR refund_reference UK
         BIGINT payment_id FK
         BIGINT merchant_id FK
         DECIMAL amount
@@ -116,7 +117,11 @@ erDiagram
         VARCHAR reason
         VARCHAR status
         VARCHAR provider_refund_id
-        VARCHAR error_code
+        VARCHAR failure_code
+        VARCHAR failure_message
+        DATETIME requested_at
+        DATETIME processed_at
+        BIGINT version
         DATETIME created_at
         DATETIME updated_at
     }

@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -25,7 +26,7 @@ public class SimulatedPaymentProvider implements PaymentProvider {
     @Override
     public PaymentProviderResponse initiatePayment(PaymentProviderRequest request) {
         String txId = "sim_tx_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-        String scenario = resolveScenario(request);
+        String scenario = resolvePaymentScenario(request);
 
         log.info("SimulatedPaymentProvider processing payment reference [{}] with scenario [{}]",
                 request.getPaymentReference(), scenario);
@@ -65,7 +66,6 @@ public class SimulatedPaymentProvider implements PaymentProvider {
     @Override
     public PaymentProviderResponse queryPaymentStatus(String providerTransactionId, String requestReference) {
         log.info("SimulatedPaymentProvider querying status for provider tx [{}]", providerTransactionId);
-        // By default in simulation, querying an existing transaction confirms successful settlement
         return PaymentProviderResponse.success(
                 providerTransactionId,
                 "200_CONFIRMED",
@@ -82,7 +82,56 @@ public class SimulatedPaymentProvider implements PaymentProvider {
         );
     }
 
-    private String resolveScenario(PaymentProviderRequest request) {
+    @Override
+    public PaymentProviderRefundResponse initiateRefund(PaymentProviderRefundRequest request) {
+        String refundTxId = "sim_ref_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        String scenario = resolveRefundScenario(request);
+
+        log.info("SimulatedPaymentProvider processing refund reference [{}] for payment [{}] with scenario [{}]",
+                request.getRefundReference(), request.getPaymentReference(), scenario);
+
+        switch (scenario.toUpperCase()) {
+            case "FAIL":
+            case "DECLINE":
+                return PaymentProviderRefundResponse.failed(
+                        refundTxId,
+                        "REFUND_DECLINED",
+                        "Simulated refund was declined by customer issuing bank."
+                );
+
+            case "TIMEOUT":
+            case "UNKNOWN":
+                log.warn("SimulatedPaymentProvider simulating network timeout during refund [{}]", refundTxId);
+                throw new PaymentProviderTimeoutException("Simulated provider timeout during refund initiation. Outcome unknown.");
+
+            case "SUCCESS":
+            default:
+                return PaymentProviderRefundResponse.success(
+                        refundTxId,
+                        "200_REFUND_APPROVED",
+                        "Simulated refund settled successfully."
+                );
+        }
+    }
+
+    @Override
+    public PaymentProviderRefundResponse queryRefundStatus(String providerRefundId, String refundReference) {
+        log.info("SimulatedPaymentProvider querying refund status for [{}] / [{}]", providerRefundId, refundReference);
+        if (providerRefundId != null && providerRefundId.contains("FAIL")) {
+            return PaymentProviderRefundResponse.failed(
+                    providerRefundId,
+                    "REFUND_DECLINED",
+                    "Simulated status query confirmed refund failure."
+            );
+        }
+        return PaymentProviderRefundResponse.success(
+                providerRefundId != null ? providerRefundId : "sim_ref_verified",
+                "200_CONFIRMED",
+                "Simulated status query confirmed refund settlement."
+        );
+    }
+
+    private String resolvePaymentScenario(PaymentProviderRequest request) {
         if (request.getSimulationScenario() != null && !request.getSimulationScenario().isBlank()) {
             return request.getSimulationScenario().trim();
         }
@@ -97,6 +146,33 @@ public class SimulatedPaymentProvider implements PaymentProvider {
             }
             if (description.contains("[SIM_ACTION]")) {
                 return "REQUIRES_ACTION";
+            }
+        }
+
+        return "SUCCESS";
+    }
+
+    private String resolveRefundScenario(PaymentProviderRefundRequest request) {
+        if (request.getSimulationScenario() != null && !request.getSimulationScenario().isBlank()) {
+            return request.getSimulationScenario().trim();
+        }
+
+        String reason = request.getReason();
+        if (reason != null) {
+            if (reason.contains("[SIM_FAIL]")) {
+                return "FAIL";
+            }
+            if (reason.contains("[SIM_TIMEOUT]")) {
+                return "TIMEOUT";
+            }
+        }
+
+        if (request.getAmount() != null) {
+            if (request.getAmount().compareTo(new BigDecimal("999.00")) == 0 || request.getAmount().compareTo(new BigDecimal("999.99")) == 0) {
+                return "FAIL";
+            }
+            if (request.getAmount().compareTo(new BigDecimal("998.00")) == 0 || request.getAmount().compareTo(new BigDecimal("998.99")) == 0) {
+                return "TIMEOUT";
             }
         }
 

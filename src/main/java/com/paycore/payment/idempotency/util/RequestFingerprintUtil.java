@@ -1,6 +1,7 @@
 package com.paycore.payment.idempotency.util;
 
 import com.paycore.payment.dto.PaymentCreateRequest;
+import com.paycore.refund.dto.RefundCreateRequest;
 
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -8,7 +9,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * Utility for computing deterministic SHA-256 fingerprints of payment requests.
+ * Utility for computing deterministic SHA-256 fingerprints of payment and refund requests.
  */
 public final class RequestFingerprintUtil {
 
@@ -31,8 +32,29 @@ public final class RequestFingerprintUtil {
         String customer = request.getCustomerReference() != null ? request.getCustomerReference().trim() : "";
         String desc = request.getDescription() != null ? request.getDescription().trim() : "";
 
-        String canonical = String.format("amount=%s|currency=%s|method=%s|customer=%s|desc=%s",
+        String canonical = String.format("action=PAYMENT|amount=%s|currency=%s|method=%s|customer=%s|desc=%s",
                 amountStr, currency, method, customer, desc);
+
+        return sha256Hex(canonical);
+    }
+
+    /**
+     * Computes a canonical SHA-256 hex string from the refund create request.
+     */
+    public static String computeRefundFingerprint(String paymentReference, RefundCreateRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("RefundCreateRequest must not be null");
+        }
+
+        String amountStr = request.getAmount() != null
+                ? request.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString()
+                : "0.00";
+        String currency = request.getCurrency() != null ? request.getCurrency().trim().toUpperCase() : "";
+        String reason = request.getReason() != null ? request.getReason().trim() : "";
+        String paymentRef = paymentReference != null ? paymentReference.trim() : "";
+
+        String canonical = String.format("action=REFUND|paymentRef=%s|amount=%s|currency=%s|reason=%s",
+                paymentRef, amountStr, currency, reason);
 
         return sha256Hex(canonical);
     }
