@@ -104,6 +104,23 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     INDEX idx_prt_expires (expires_at)
 );
 
+
+-- ===================================================================
+-- External OAuth / Identity Provider Mappings
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS user_external_identities (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider VARCHAR(50) NOT NULL DEFAULT 'GOOGLE',
+    provider_subject VARCHAR(255) NOT NULL,
+    user_id BIGINT NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    linked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_external_identity_provider_subject UNIQUE (provider, provider_subject),
+    CONSTRAINT fk_external_identity_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    INDEX idx_external_identities_user_id (user_id),
+    INDEX idx_external_identities_email (email)
+);
+
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,

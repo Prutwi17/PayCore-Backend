@@ -33,6 +33,13 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     @Query("SELECT r FROM Refund r LEFT JOIN FETCH r.payment p LEFT JOIN FETCH r.merchant m WHERE p.paymentReference = :paymentReference ORDER BY r.createdAt DESC")
     List<Refund> findByPaymentReferenceOrderByCreatedAtDesc(@Param("paymentReference") String paymentReference);
 
+    long countByMerchantId(Long merchantId);
+
+    long countByMerchantIdAndStatus(Long merchantId, RefundStatus status);
+
+    @Query("SELECT COALESCE(SUM(r.amount), 0) FROM Refund r WHERE r.merchant.id = :merchantId AND r.status = 'SUCCESS'")
+    BigDecimal sumSuccessfulAmountByMerchantId(@Param("merchantId") Long merchantId);
+
     @Query("SELECT r FROM Refund r LEFT JOIN FETCH r.payment p LEFT JOIN FETCH r.merchant m WHERE p.paymentReference = :paymentReference AND r.merchant.id = :merchantId ORDER BY r.createdAt DESC")
     List<Refund> findByPaymentReferenceAndMerchantIdOrderByCreatedAtDesc(
             @Param("paymentReference") String paymentReference,
