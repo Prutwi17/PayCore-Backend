@@ -1,0 +1,464 @@
+{
+  "info": {
+    "_postman_id": "7f8b9c1d-6e5a-4b3c-8a1e-9d8e7c6b5a4f",
+    "name": "PayCore Payment Processing Engine API",
+    "description": "Comprehensive Postman collection for testing and verifying all PayCore endpoints across Authentication, Merchants, Payments, Refunds, Webhooks, Reconciliation, Audit Logging, and Admin Dashboard.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication & Email Identity",
+      "item": [
+        {
+          "name": "Register Merchant Account",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new_merchant@example.com\",\n  \"password\": \"SecureMerchant123!\",\n  \"confirmPassword\": \"SecureMerchant123!\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"businessName\": \"Acme Corp\",\n  \"businessType\": \"E-Commerce\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"raw_verification_token_from_email\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/verify-email", "host": ["{{baseUrl}}"], "path": ["auth", "verify-email"] }
+          }
+        },
+        {
+          "name": "Resend Verification Email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new_merchant@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/resend-verification", "host": ["{{baseUrl}}"], "path": ["auth", "resend-verification"] }
+          }
+        },
+        {
+          "name": "Login (Extracts Tokens)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.environment.set(\"accessToken\", jsonData.data.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", jsonData.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{merchantEmail}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Refresh Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.environment.set(\"accessToken\", jsonData.data.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", jsonData.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Logout (Revoke Refresh Token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{merchantEmail}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["auth", "forgot-password"] }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"raw_reset_token_from_email\",\n  \"newPassword\": \"NewSecurePass456!\",\n  \"confirmPassword\": \"NewSecurePass456!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["auth", "reset-password"] }
+          }
+        },
+        {
+          "name": "Email Delivery Diagnostics Status",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/email-status", "host": ["{{baseUrl}}"], "path": ["auth", "email-status"] }
+          }
+        },
+        {
+          "name": "Google OAuth Authorization URL",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/google/oauth-url", "host": ["{{baseUrl}}"], "path": ["auth", "google", "oauth-url"] }
+          }
+        },
+        {
+          "name": "Get Current Authenticated Profile (/me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Merchants & API Credentials",
+      "item": [
+        {
+          "name": "Get Current Merchant Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/merchant/profile", "host": ["{{baseUrl}}"], "path": ["merchant", "profile"] }
+          }
+        },
+        {
+          "name": "Generate Merchant API Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.apiKey) {",
+                  "    pm.environment.set(\"apiKey\", jsonData.data.apiKey);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Production Backend Server\",\n  \"environment\": \"TEST\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/merchant/api-keys", "host": ["{{baseUrl}}"], "path": ["merchant", "api-keys"] }
+          }
+        },
+        {
+          "name": "List Merchant API Keys",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/merchant/api-keys", "host": ["{{baseUrl}}"], "path": ["merchant", "api-keys"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Payment Engine & Idempotency",
+      "item": [
+        {
+          "name": "Create Payment (Idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.paymentReference) {",
+                  "    pm.environment.set(\"paymentRef\", jsonData.data.paymentReference);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Api-Key", "value": "{{apiKey}}" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"paymentMethod\": \"CREDIT_CARD\",\n  \"customerEmail\": \"customer@example.com\",\n  \"customerReference\": \"cust_101\",\n  \"description\": \"Payment for Order #1004\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/payments", "host": ["{{baseUrl}}"], "path": ["payments"] }
+          }
+        },
+        {
+          "name": "Get Payment by Reference",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/payments/{{paymentRef}}", "host": ["{{baseUrl}}"], "path": ["payments", "{{paymentRef}}"] }
+          }
+        },
+        {
+          "name": "List Merchant Payments (Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/payments?page=0&size=10&status=SUCCESS",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "status", "value": "SUCCESS" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Indeterminate Payment (Self-Healing)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/payments/{{paymentRef}}/verify", "host": ["{{baseUrl}}"], "path": ["payments", "{{paymentRef}}", "verify"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Refunds & Balance Management",
+      "item": [
+        {
+          "name": "Create Refund (Partial / Full)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.refundReference) {",
+                  "    pm.environment.set(\"refundRef\", jsonData.data.refundReference);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentReference\": \"{{paymentRef}}\",\n  \"amount\": 50.00,\n  \"reason\": \"Customer return request\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/refunds", "host": ["{{baseUrl}}"], "path": ["refunds"] }
+          }
+        },
+        {
+          "name": "Get Refund by Reference",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/refunds/{{refundRef}}", "host": ["{{baseUrl}}"], "path": ["refunds", "{{refundRef}}"] }
+          }
+        },
+        {
+          "name": "List Merchant Refunds (Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/refunds?page=0&size=10", "host": ["{{baseUrl}}"], "path": ["refunds"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "10" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Unified Transaction History",
+      "item": [
+        {
+          "name": "Query Unified Transactions Ledger",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["transactions"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Webhooks & Kafka Subscriptions",
+      "item": [
+        {
+          "name": "Create Webhook Endpoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://api.merchant.com/webhooks/paycore\",\n  \"subscribedEvents\": [\"PAYMENT_SUCCESS\", \"PAYMENT_FAILED\", \"REFUND_SUCCESS\"]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/webhooks/endpoints", "host": ["{{baseUrl}}"], "path": ["webhooks", "endpoints"] }
+          }
+        },
+        {
+          "name": "List Webhook Endpoints",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/webhooks/endpoints", "host": ["{{baseUrl}}"], "path": ["webhooks", "endpoints"] }
+          }
+        },
+        {
+          "name": "List Webhook Delivery Attempts",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/webhooks/deliveries?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["webhooks", "deliveries"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "20" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Reconciliation & Audit Logging",
+      "item": [
+        {
+          "name": "Trigger Reconciliation Run",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/reconciliation/runs/trigger?provider=SIMULATED_PROVIDER", "host": ["{{baseUrl}}"], "path": ["admin", "reconciliation", "runs", "trigger"], "query": [{ "key": "provider", "value": "SIMULATED_PROVIDER" }] }
+          }
+        },
+        {
+          "name": "List Reconciliation Runs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/reconciliation/runs?page=0&size=10", "host": ["{{baseUrl}}"], "path": ["admin", "reconciliation", "runs"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Query Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/audit-logs?page=0&size=25", "host": ["{{baseUrl}}"], "path": ["admin", "audit-logs"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "25" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Admin Governance & Telemetry",
+      "item": [
+        {
+          "name": "Admin Dashboard Metrics",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/dashboard/metrics", "host": ["{{baseUrl}}"], "path": ["admin", "dashboard", "metrics"] }
+          }
+        },
+        {
+          "name": "Admin Initiate Setup Invitation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"omp27614@gmail.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/admin/initiate-setup", "host": ["{{baseUrl}}"], "path": ["auth", "admin", "initiate-setup"] }
+          }
+        },
+        {
+          "name": "Admin Complete Setup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"raw_setup_token_from_email\",\n  \"password\": \"MasterAdminSecretPass2026!\",\n  \"confirmPassword\": \"MasterAdminSecretPass2026!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/admin/complete-setup", "host": ["{{baseUrl}}"], "path": ["auth", "admin", "complete-setup"] }
+          }
+        },
+        {
+          "name": "Admin List All Merchants",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/merchants?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["admin", "merchants"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "20" }] }
+          }
+        }
+      ]
+    }
+  ]
+}
