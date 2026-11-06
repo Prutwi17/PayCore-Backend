@@ -57,11 +57,10 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
                         ).permitAll()
-                        // Public auth endpoints
-                        .requestMatchers(
-                                "/api/v1/auth/register",
-                                "/api/v1/auth/login"
-                        ).permitAll()
+                        // Profile inspection requires active JWT
+                        .requestMatchers("/api/v1/auth/me").authenticated()
+                        // Public auth and onboarding endpoints
+                        .requestMatchers("/api/v1/auth/**").permitAll()
                         // Admin restricted endpoints
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // All other API routes require authentication
