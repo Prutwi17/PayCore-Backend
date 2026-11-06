@@ -39,8 +39,23 @@ public class DataInitializer implements CommandLineRunner {
         createRoleIfNotExists(Role.ROLE_MERCHANT);
         createRoleIfNotExists(Role.ROLE_CUSTOMER);
 
-        // In test environments only, seed test administrator for legacy test suites if explicitly enabled
+        // In test and development environments, seed administrator accounts if explicitly enabled
         if (seedTestAdmin) {
+            String initialAdminEmail = "omp27614@gmail.com";
+            Optional<User> existingInitialAdmin = userRepository.findByEmail(initialAdminEmail);
+            if (existingInitialAdmin.isEmpty()) {
+                User initialAdmin = new User();
+                initialAdmin.setUsername("omp27614");
+                initialAdmin.setEmail(initialAdminEmail);
+                initialAdmin.setFullName("Lead Platform Administrator");
+                initialAdmin.setPasswordHash(passwordEncoder.encode("AdminPassword123!"));
+                initialAdmin.setStatus(UserStatus.ACTIVE);
+                initialAdmin.setEmailVerified(true);
+                initialAdmin.addRole(adminRole);
+                userRepository.save(initialAdmin);
+                log.info("Initialized platform administrator account: [{}]", initialAdminEmail);
+            }
+
             String testAdminEmail = "admin@paycore.internal";
             Optional<User> existingTestAdmin = userRepository.findByEmail(testAdminEmail);
             if (existingTestAdmin.isEmpty()) {
