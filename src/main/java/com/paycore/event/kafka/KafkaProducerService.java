@@ -10,6 +10,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -25,9 +26,9 @@ public class KafkaProducerService {
 
     @Autowired
     public KafkaProducerService(ObjectMapper objectMapper,
-                                @Autowired(required = false) KafkaTemplate<String, String> kafkaTemplate) {
+                                Optional<KafkaTemplate<String, String>> kafkaTemplateOpt) {
         this.objectMapper = objectMapper;
-        this.kafkaTemplate = kafkaTemplate;
+        this.kafkaTemplate = kafkaTemplateOpt.orElse(null);
     }
 
     /**
