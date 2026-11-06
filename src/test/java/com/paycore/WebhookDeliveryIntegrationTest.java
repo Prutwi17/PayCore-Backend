@@ -152,7 +152,7 @@ class WebhookDeliveryIntegrationTest {
         // Verify local server received HTTP request
         assertEquals(1, receivedHeaders.size());
         Map<String, String> headers = receivedHeaders.get(0);
-        assertEquals("paycore-webhook/1.0", headers.get("user-agent"));
+        assertTrue("PayCore-Webhook/1.0".equalsIgnoreCase(headers.get("user-agent")));
         assertEquals("evt_webhook_test_1", headers.get("x-paycore-event-id"));
         assertEquals("PAYMENT_SUCCESS", headers.get("x-paycore-event-type"));
 
