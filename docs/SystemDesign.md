@@ -311,3 +311,84 @@ The `PaymentRetryExecutor` strictly segregates query and charge operations:
   - Reconciliation batch compares records on `(provider_transaction_id, internal_payment_id)`.
   - Mismatch is recorded in `reconciliation_records` with flag `STATUS_MISMATCH` or `AMOUNT_MISMATCH`.
   - Admin dashboard surfaces the discrepancy for manual review or automated auto-heal workflow.
+
+---
+
+## 5. Asynchronous Event & Webhook Delivery Engine (Stage 6)
+
+### 5.1 Transactional Outbox Pattern Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as API Client / Merchant
+    participant Controller as Payment / Refund Service
+    participant DB as MySQL (Entities & outbox_events)
+    participant Scheduler as OutboxPublisherScheduler
+    participant Kafka as Apache Kafka Broker
+    
+    Client->>Controller: POST /payments or /refunds
+    Note over Controller,DB: ACID Transaction Scope
+    Controller->>DB: Persist Entity (Payment / Refund)
+    Controller->>DB: INSERT INTO outbox_events (event_id, aggregate_id, payload, status='PENDING')
+    DB-->>Controller: Commit Transaction
+    Controller-->>Client: HTTP 201 Created
+    
+    Note over Scheduler,Kafka: Completely Asynchronous Background Publication
+    loop Every 1000ms
+        Scheduler->>DB: SELECT * FROM outbox_events WHERE status = 'PENDING' LIMIT 50 FOR UPDATE SKIP LOCKED
+        Scheduler->>Kafka: send(topic, key=aggregate_id, value=payload)
+        alt Kafka ACK Success
+            Scheduler->>DB: UPDATE outbox_events SET status='PUBLISHED', published_at=NOW()
+        else Kafka Broker Failure
+            Scheduler->>DB: UPDATE outbox_events SET retry_count=retry_count+1, last_error=?
+        end
+    end
+```
+
+### 5.2 Webhook Delivery Engine with SSRF Guard & Backoff Retries
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Consumer as Payment / Refund Kafka Consumer
+    participant Inbox as inbox_events Table
+    participant Dispatcher as WebhookDispatcherService
+    participant SSRF as WebhookSsrfValidator
+    participant Worker as WebhookDeliveryWorker
+    actor MerchantServer as Merchant Webhook Receiver
+    participant DLQ as Dead-Letter Quarantine
+
+    Consumer->>Inbox: INSERT INTO inbox_events (event_id, consumer_name, status='RECEIVED')
+    alt Duplicate Constraint Violation (uk_inbox_event_consumer)
+        Consumer-->>Consumer: Log duplicate ignored; ACK Kafka offset
+    else Atomic Insert Success
+        Consumer->>Dispatcher: dispatchEvent(event)
+        Dispatcher->>Dispatcher: Find active endpoints subscribed to event.type
+        loop Each Subscribed Endpoint
+            Dispatcher->>SSRF: validateUrl(endpoint.url)
+            alt SSRF Detected (Loopback, RFC-1918, Cloud Metadata)
+                SSRF-->>Dispatcher: Throw WebhookSsrfException
+                Dispatcher->>Worker: Record attempt delivery_status='FAILED' (Non-retryable)
+            else Valid Public HTTPS Endpoint
+                Dispatcher->>Worker: executeDelivery(attempt)
+                Worker->>Worker: Compute HMAC-SHA256 signature (X-PayCore-Signature)
+                Worker->>MerchantServer: POST endpoint.url (Timeout: 5000ms)
+                alt HTTP 2xx Success
+                    Worker->>Worker: delivery_status='SUCCESS', reset consecutive failures
+                else HTTP 4xx Client Error
+                    Worker->>Worker: delivery_status='FAILED' (Non-retryable client error)
+                else HTTP 5xx / 429 / Socket Timeout
+                    alt Attempt Count < 5
+                        Worker->>Worker: Calculate Backoff [5s, 30s, 120s, 900s, 3600s]
+                        Worker->>Worker: delivery_status='RETRYING', next_retry_at=now+backoff
+                    else Attempt Count >= 5
+                        Worker->>DLQ: delivery_status='DEAD_LETTER' (Exhausted retries)
+                        Worker->>Worker: Increment endpoint failure_count
+                    end
+                end
+            end
+        end
+        Consumer->>Inbox: UPDATE inbox_events SET processing_status='PROCESSED'
+    end
+```

@@ -26,3 +26,18 @@ jobs:
         run: mvn clean verify -B
         env:
           SPRING_PROFILES_ACTIVE: test
+
+      - name: Display test failure reports
+        if: failure()
+        run: |
+          echo "Dumping test failures to annotations..."
+          for f in target/surefire-reports/*.txt; do
+            if [ -f "$f" ]; then
+              if grep -q "FAILURE\|ERROR" "$f"; then
+                echo "Found failure in $f"
+                cat "$f"
+                content=$(head -n 25 "$f" | tr '\n' ' ')
+                echo "::error title=$f::$content"
+              fi
+            fi
+          done

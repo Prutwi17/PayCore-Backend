@@ -74,7 +74,37 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 5 Complete)
+## 🧪 Testing & Current Status (Stage 6 Complete)
+
+PayCore Stage 6 (Webhooks, Kafka & Asynchronous Processing) is fully implemented, verified, and operational:
+
+- **Transactional Outbox Pattern:**
+  - Events are saved into `outbox_events` in the **exact same ACID database transaction** as payments and refunds (`PaymentTransactionHelper`, `RefundTransactionHelper`).
+  - No dual-write failure: even if Kafka or the application crashes, no event is ever lost.
+  - Background `OutboxPublisherScheduler` polls pending records and dispatches to Kafka outside any DB transaction, recording broker ACKs.
+- **Kafka Messaging & Topic Design:**
+  - 6 Kafka topics: `paycore.payment.events`, `paycore.refund.events`, `paycore.webhook.events`, and corresponding `.dlq` dead-letter queues.
+  - Partition key set to aggregate ID (`paymentReference` / `refundReference`) to guarantee strict per-entity ordering.
+- **Idempotent Inbox Consumers:**
+  - `InboxEvent` table with unique constraint `(event_id, consumer_name)` acts as an atomic deduplication barrier.
+  - Duplicate deliveries resulting from broker re-balances or network retries are detected and skipped without executing duplicate side effects.
+- **Multi-Layer SSRF Defense:**
+  - `WebhookSsrfValidator` verifies destination URLs before any HTTP socket connection.
+  - Blocks loopback (`127.0.0.1`, `localhost`, `::1`), RFC-1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local metadata (`169.254.0.0/16`), multicast, and HTTP redirects.
+- **Canonical HMAC-SHA256 Signatures:**
+  - Secrets generated with `whsec_` prefix and 32 bytes cryptographically secure entropy.
+  - Outbound requests include `X-PayCore-Signature: t={timestamp},v1={hash}` and `X-PayCore-Event: {type}`.
+  - Constant-time verification prevents timing attacks; 5-minute replay tolerance window.
+  - Single-exposure secret policy: secrets are displayed only once upon generation; database stores reversible encryption for workers and SHA-256 for hashes.
+- **Webhook Delivery Engine & Exponential Backoff:**
+  - Non-blocking HTTP POST worker with execution latency tracking.
+  - Failure classification: retryable (5xx, 429, timeouts) vs non-retryable (4xx client errors, SSRF rejections).
+  - Exponential backoff schedule across 5 attempts: `5s, 30s, 120s, 900s, 3600s`.
+  - Quarantine: exhausted attempts routed to `DEAD_LETTER` with manual admin replay.
+- **Admin Governance & Telemetry:**
+  - REST endpoints for metrics (`/api/v1/admin/webhooks/metrics`), Outbox monitoring and force republishing, Inbox consumer logs, and Dead-Letter recovery.
+
+## 🧪 Previous Stage 5 Details
 
 PayCore Stage 5 (Refund Management & Transaction History) is fully implemented, verified, and operational:
 

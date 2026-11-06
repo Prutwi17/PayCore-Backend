@@ -163,3 +163,26 @@ The `SimulatedPaymentProvider` implements this interface with configurable behav
 - Configurable synthetic latency (default 300ms)
 - Simulated timeout responses (testing the `UNKNOWN` state machine path)
 - Error code mapping (e.g., `INSUFFICIENT_FUNDS`, `EXPIRED_CARD`, `DO_NOT_HONOR`).
+
+---
+
+## 5. Event-Driven Architecture & Webhook Engine (Stage 6)
+
+### 5.1 Transactional Outbox Pattern
+To guarantee **at-least-once** event publishing without dual-write inconsistencies between MySQL and Apache Kafka:
+1. When a business state transition occurs (e.g., `PAYMENT_CREATED`, `PAYMENT_SUCCESS`, `REFUND_SUCCESS`), a canonical `OutboxEvent` record is inserted inside the **exact same ACID database transaction** as the entity update.
+2. Kafka publication is completely isolated from user-facing HTTP request threads.
+3. An `OutboxPublisherScheduler` polls for `PENDING` outbox records, publishes them to Kafka with the aggregate ID (`paymentReference` / `refundReference`) as the message key to maintain partition-level ordering, and marks them `PUBLISHED` upon broker acknowledgment.
+4. If Kafka is unavailable, records remain safely in the `outbox_events` table and retry with exponential backoff.
+
+### 5.2 Idempotent Inbox Consumer Pattern
+Because distributed brokers guarantee **at-least-once** delivery, duplicate messages can arrive. To ensure zero duplicate side effects:
+1. Every consumer (`PaymentEventConsumer`, `RefundEventConsumer`) records event reception into the `inbox_events` table under a strict composite unique constraint: `(event_id, consumer_name)`.
+2. When a duplicate message is received, the atomic insertion detects the duplicate and short-circuits execution before applying any business action.
+3. Once business processing succeeds, the record is transitioned to `PROCESSED`. If an unrecoverable error occurs, it is routed to the corresponding `.dlq` topic.
+
+### 5.3 Webhook Dispatcher & Delivery Engine
+1. **SSRF Guard:** Prior to making any outbound HTTP POST, `WebhookSsrfValidator` resolves the target hostname and blocks loopback addresses (`127.0.0.1`, `localhost`, `::1`), RFC-1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local IPs, multicast, and redirects.
+2. **HMAC-SHA256 Signatures:** Requests include standard signature headers:
+   `X-PayCore-Signature: t={timestamp},v1={hash}` and `X-PayCore-Event: {eventType}`.
+3. **Exponential Backoff & Dead-Letter Quarantine:** Failed deliveries (5xx, 429, timeouts) are scheduled across 5 retry intervals: `5s, 30s, 120s, 900s, 3600s`. After 5 failed attempts, deliveries are transitioned to `DEAD_LETTER` for admin recovery.

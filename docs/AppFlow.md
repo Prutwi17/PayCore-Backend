@@ -153,23 +153,37 @@ sequenceDiagram
 
 ---
 
-## 4. Webhook Dispatch & Retry Flow (Kafka Worker)
+## 4. Webhook Dispatch & Retry Flow (Stage 6)
 
 ```mermaid
 flowchart TD
-    E[Kafka Event: paycore.webhook.dispatch] --> C[Webhook Consumer Worker]
-    C --> F[Fetch Merchant Webhook Endpoint Config]
-    F --> S[Generate HMAC-SHA256 Signature (X-PayCore-Signature)]
-    S --> D[HTTP POST to Merchant URL (Timeout: 5000ms)]
+    TX[Business Transaction: Payment/Refund State Transition] -->|Atomic Insert| OB[(outbox_events Table)]
+    OB -->|OutboxPublisherScheduler| KP[Kafka Producer: Key=AggregateId]
+    KP --> KT[Kafka Topics: paycore.payment.events / paycore.refund.events]
     
-    D -->|HTTP 2xx Success| OK[Record Success in webhook_delivery_attempts]
-    D -->|HTTP 4xx / 5xx / Timeout| R{Attempt Count < 5?}
+    KT --> IC[Idempotent Kafka Consumer]
+    IC --> IB{Check inbox_events<br/>(event_id, consumer_name)}
+    IB -->|Duplicate Found| IGN[Short-circuit Duplicate / Acknowledge]
+    IB -->|First Receipt| WD[Webhook Dispatcher Service]
     
-    R -->|Yes| B[Calculate Exponential Backoff (1s, 5s, 30s, 300s, 1800s)]
-    B --> Q[Produce to paycore.webhook.dispatch.retry]
+    WD --> EP[Find Active Subscribed Merchant Endpoints]
+    EP --> SSRF{Validate Destination URL<br/>WebhookSsrfValidator}
+    SSRF -->|Private/Loopback/Redirect| REJ[Reject SSRF & Record Attempt FAILED]
+    SSRF -->|Valid Public HTTPS| SIG[Generate HMAC-SHA256 Signature<br/>X-PayCore-Signature: t=...,v1=...]
     
-    R -->|No: Max Retries Exceeded| DLQ[Produce to paycore.webhook.dispatch.dlq]
-    DLQ --> AL[Record Permanent Failure & Alert Admin Dashboard]
+    SIG --> POST[HTTP POST Worker<br/>Timeout: 5000ms]
+    POST --> RES{HTTP Response Code}
+    
+    RES -->|2xx Success| SUC[delivery_status = SUCCESS<br/>Reset Consecutive Failures]
+    RES -->|4xx Client Error| CLN[Non-retryable 4xx<br/>delivery_status = FAILED]
+    RES -->|5xx Server Error / 429 / Timeout| RET{Attempt < 5?}
+    
+    RET -->|Yes| SCH[Calculate Backoff: 5s, 30s, 120s, 900s, 3600s<br/>delivery_status = RETRYING<br/>next_retry_at = now + delay]
+    SCH --> WR[WebhookRetryScheduler Poller]
+    WR --> POST
+    
+    RET -->|No: 5 Attempts Exhausted| DLQ[delivery_status = DEAD_LETTER<br/>Route to Admin Quarantine]
+    DLQ --> ADM[Admin Alert & Manual Replay Available]
 ```
 
 ---

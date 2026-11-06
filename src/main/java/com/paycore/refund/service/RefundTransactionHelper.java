@@ -1,6 +1,9 @@
 package com.paycore.refund.service;
 
 import com.paycore.common.exception.ResourceNotFoundException;
+import com.paycore.event.model.EventType;
+import com.paycore.event.model.PayCoreEventBuilder;
+import com.paycore.event.outbox.OutboxService;
 import com.paycore.payment.entity.Payment;
 import com.paycore.payment.entity.PaymentStatus;
 import com.paycore.payment.exception.PaymentValidationException;
@@ -30,6 +33,8 @@ import java.util.UUID;
  * Isolated transaction boundary manager for refund lifecycle operations.
  * Enforces the Zero-DB Network I/O Principle and prevents over-refunding under concurrency
  * using pessimistic write locks on the parent Payment entity.
+ * 
+ * Atomically records transactional outbox events for all refund state transitions.
  */
 @Component
 public class RefundTransactionHelper {
@@ -39,15 +44,18 @@ public class RefundTransactionHelper {
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
     private final RefundStateMachine refundStateMachine;
+    private final OutboxService outboxService;
 
     public RefundTransactionHelper(
             PaymentRepository paymentRepository,
             RefundRepository refundRepository,
-            RefundStateMachine refundStateMachine
+            RefundStateMachine refundStateMachine,
+            OutboxService outboxService
     ) {
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
         this.refundStateMachine = refundStateMachine;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -121,10 +129,17 @@ public class RefundTransactionHelper {
         refund.setStatus(RefundStatus.REQUESTED);
         refund.setRequestedAt(Instant.now());
 
-        // Transition REQUESTED -> PROCESSING
-        refundStateMachine.transition(refund, RefundStatus.PROCESSING);
+        Refund initialSaved = refundRepository.saveAndFlush(refund);
 
-        Refund savedRefund = refundRepository.saveAndFlush(refund);
+        // Record outbox event: REFUND_CREATED
+        outboxService.recordEvent(PayCoreEventBuilder.fromRefund(initialSaved, EventType.REFUND_CREATED));
+
+        // Transition REQUESTED -> PROCESSING
+        refundStateMachine.transition(initialSaved, RefundStatus.PROCESSING);
+        Refund savedRefund = refundRepository.saveAndFlush(initialSaved);
+
+        // Record outbox event: REFUND_PROCESSING
+        outboxService.recordEvent(PayCoreEventBuilder.fromRefund(savedRefund, EventType.REFUND_PROCESSING));
 
         log.info("Reserved amount [{}] for refund [{}] on payment [{}]. Phase 1 commit.",
                 refundAmount, refundReference, paymentReference);
@@ -162,6 +177,8 @@ public class RefundTransactionHelper {
 
         BigDecimal amount = refund.getAmount();
 
+        EventType outcomeEvent;
+
         if (providerResponse != null && providerResponse.isSuccess()) {
             // Deduct reserved and add to permanently refunded
             payment.setAmountRefundReserved(payment.getAmountRefundReserved().subtract(amount));
@@ -179,6 +196,7 @@ public class RefundTransactionHelper {
             refund.setFailureCode(null);
             refund.setFailureMessage(null);
             refund.setProcessedAt(Instant.now());
+            outcomeEvent = EventType.REFUND_SUCCESS;
 
             log.info("Refund [{}] finalized SUCCESS for payment [{}]", refund.getRefundReference(), payment.getPaymentReference());
         } else if (providerResponse != null && providerResponse.isFailed()) {
@@ -190,6 +208,7 @@ public class RefundTransactionHelper {
             refund.setFailureCode(providerResponse.getFailureCode());
             refund.setFailureMessage(providerResponse.getFailureMessage());
             refund.setProcessedAt(Instant.now());
+            outcomeEvent = EventType.REFUND_FAILED;
 
             log.warn("Refund [{}] finalized FAILED for payment [{}]: {}",
                     refund.getRefundReference(), payment.getPaymentReference(), providerResponse.getFailureMessage());
@@ -199,6 +218,7 @@ public class RefundTransactionHelper {
             refund.setFailureCode("PROVIDER_TIMEOUT");
             refund.setFailureMessage(providerError != null ? providerError.getMessage() : "Provider outcome unconfirmed");
             refund.setProcessedAt(Instant.now());
+            outcomeEvent = EventType.REFUND_UNKNOWN;
 
             log.warn("Refund [{}] outcome UNKNOWN for payment [{}]. Retaining reserved balance pending reconciliation.",
                     refund.getRefundReference(), payment.getPaymentReference());
@@ -206,6 +226,9 @@ public class RefundTransactionHelper {
 
         paymentRepository.saveAndFlush(payment);
         Refund savedRefund = refundRepository.saveAndFlush(refund);
+
+        // Record outbox outcome event
+        outboxService.recordEvent(PayCoreEventBuilder.fromRefund(savedRefund, outcomeEvent));
 
         return RefundResponseDto.fromEntity(savedRefund);
     }
@@ -235,6 +258,8 @@ public class RefundTransactionHelper {
         // Transition UNKNOWN -> PROCESSING
         refundStateMachine.transition(refund, RefundStatus.PROCESSING);
 
+        EventType outcomeEvent = null;
+
         if (providerResponse.isSuccess()) {
             payment.setAmountRefundReserved(payment.getAmountRefundReserved().subtract(amount));
             payment.setAmountRefunded(payment.getAmountRefunded().add(amount));
@@ -250,6 +275,7 @@ public class RefundTransactionHelper {
             refund.setFailureCode(null);
             refund.setFailureMessage(null);
             refund.setProcessedAt(Instant.now());
+            outcomeEvent = EventType.REFUND_SUCCESS;
             log.info("Verified refund [{}] as SUCCESS", refund.getRefundReference());
         } else if (providerResponse.isFailed()) {
             payment.setAmountRefundReserved(payment.getAmountRefundReserved().subtract(amount));
@@ -258,6 +284,7 @@ public class RefundTransactionHelper {
             refund.setFailureCode(providerResponse.getFailureCode());
             refund.setFailureMessage(providerResponse.getFailureMessage());
             refund.setProcessedAt(Instant.now());
+            outcomeEvent = EventType.REFUND_FAILED;
             log.warn("Verified refund [{}] as FAILED", refund.getRefundReference());
         } else {
             refundStateMachine.transition(refund, RefundStatus.UNKNOWN);
@@ -266,6 +293,10 @@ public class RefundTransactionHelper {
 
         paymentRepository.saveAndFlush(payment);
         Refund savedRefund = refundRepository.saveAndFlush(refund);
+
+        if (outcomeEvent != null) {
+            outboxService.recordEvent(PayCoreEventBuilder.fromRefund(savedRefund, outcomeEvent));
+        }
 
         return RefundResponseDto.fromEntity(savedRefund);
     }
