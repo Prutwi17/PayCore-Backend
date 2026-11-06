@@ -489,3 +489,138 @@
 - **Endpoint:** `GET /api/v1/admin/webhooks/deliveries/dead-letter` (List dead-letter deliveries)
 - **Endpoint:** `POST /api/v1/admin/webhooks/deliveries/{attemptReference}/replay` (Force redelivery attempt)
 - **Access:** Admin (`ROLE_ADMIN` only)
+
+
+---
+
+## 9. Financial Reconciliation Endpoints (`/api/v1/admin/reconciliation`)
+
+### 9.1 Trigger Reconciliation Run
+- **Endpoint:** `POST /api/v1/admin/reconciliation/runs`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Request Body:**
+  ```json
+  {
+    "runType": "FULL",
+    "startDate": "2026-11-01T00:00:00Z",
+    "endDate": "2026-11-06T23:59:59Z",
+    "notes": "Daily automated clearing settlement reconciliation"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Reconciliation run executed successfully",
+    "data": {
+      "id": 1,
+      "runReference": "rec_run_9a2f7c01b34e4a91",
+      "runType": "FULL",
+      "status": "COMPLETED",
+      "totalRecords": 150,
+      "matchedRecords": 148,
+      "discrepancyRecords": 2,
+      "failedRecords": 0,
+      "initiatedBy": "admin@paycore.internal",
+      "createdAt": "2026-11-06T14:00:00Z"
+    }
+  }
+  ```
+
+### 9.2 List Reconciliation Runs
+- **Endpoint:** `GET /api/v1/admin/reconciliation/runs`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** `status` (`PENDING`, `RUNNING`, `COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`), `page`, `size`
+
+### 9.3 Get Reconciliation Run Details
+- **Endpoint:** `GET /api/v1/admin/reconciliation/runs/{runReference}`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 9.4 List Records in Run
+- **Endpoint:** `GET /api/v1/admin/reconciliation/runs/{runReference}/records`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** `status` (`MATCHED`, `UNMATCHED`, `REVIEW_REQUIRED`, `RESOLVED`), `discrepancyType`, `recordType` (`PAYMENT`, `REFUND`), `page`, `size`
+
+### 9.5 List Global Active Discrepancies
+- **Endpoint:** `GET /api/v1/admin/reconciliation/discrepancies`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** `status`, `discrepancyType`, `recordType`, `page`, `size`
+
+### 9.6 Manually Resolve Discrepancy
+- **Endpoint:** `POST /api/v1/admin/reconciliation/records/{recordId}/resolve`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Request Body:**
+  ```json
+  {
+    "reason": "FEE_ADJUSTMENT",
+    "notes": "Verified provider discount deduction with billing team; cleared as valid gateway surcharge."
+  }
+  ```
+- **Response (200 OK):** Standardized response with updated status `RESOLVED`, `resolvedBy`, and `resolvedAt`.
+
+---
+
+## 10. Immutable Audit Log Endpoints (`/api/v1/admin/audit-logs`)
+
+### 10.1 Query Audit Logs
+- **Endpoint:** `GET /api/v1/admin/audit-logs`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** `actorId`, `action`, `resourceType`, `resourceId`, `merchantId`, `startDate`, `endDate`, `page`, `size`
+
+### 10.2 Get Audit Log Entry by ID
+- **Endpoint:** `GET /api/v1/admin/audit-logs/{id}`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 10.3 Recent System Activity
+- **Endpoint:** `GET /api/v1/admin/audit-logs/recent`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+---
+
+## 11. Admin Operational Dashboard Endpoints (`/api/v1/admin/dashboard`)
+
+### 11.1 High-Level KPI Summary
+- **Endpoint:** `GET /api/v1/admin/dashboard/summary`
+- **Access:** Admin (`ROLE_ADMIN` only)
+- **Query Parameters:** `startDate`, `endDate` (ISO-8601 strings, optional)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Dashboard summary metrics retrieved successfully",
+    "data": {
+      "totalPayments": 1250,
+      "successfulPayments": 1180,
+      "failedPayments": 65,
+      "pendingProcessingPayments": 4,
+      "unknownPayments": 1,
+      "totalPaymentVolume": 142500.50,
+      "paymentSuccessRate": 94.4,
+      "totalRefunds": 24,
+      "successfulRefunds": 22,
+      "successfulRefundVolume": 3150.00,
+      "pendingRefunds": 2,
+      "webhookDeliveryFailures": 3,
+      "pendingWebhookRetries": 1,
+      "latestReconciliationStatus": "COMPLETED",
+      "latestReconciliationAt": "2026-11-06T12:00:00Z",
+      "unresolvedDiscrepanciesCount": 2
+    }
+  }
+  ```
+
+### 11.2 Payment Daily Trends
+- **Endpoint:** `GET /api/v1/admin/dashboard/trends/payments`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 11.3 Refund Daily Trends
+- **Endpoint:** `GET /api/v1/admin/dashboard/trends/refunds`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 11.4 Payment Status Distribution Breakdown
+- **Endpoint:** `GET /api/v1/admin/dashboard/status-distribution`
+- **Access:** Admin (`ROLE_ADMIN` only)
+
+### 11.5 Reconciliation Health Summary
+- **Endpoint:** `GET /api/v1/admin/dashboard/reconciliation-summary`
+- **Access:** Admin (`ROLE_ADMIN` only)
