@@ -1,22 +1,37 @@
 package com.paycore.payment.provider;
 
 import com.paycore.payment.exception.PaymentProviderTimeoutException;
+import com.paycore.reconciliation.adapter.SimulatedProviderRecordStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Deterministic simulated payment provider for local development, automated testing,
  * and sandbox demonstrations.
+ * Automatically populates an independent provider statement store for reconciliation.
  */
 @Component
 public class SimulatedPaymentProvider implements PaymentProvider {
 
     private static final Logger log = LoggerFactory.getLogger(SimulatedPaymentProvider.class);
     public static final String PROVIDER_NAME = "SIMULATED";
+
+    private final SimulatedProviderRecordStore recordStore;
+
+    public SimulatedPaymentProvider() {
+        this.recordStore = null;
+    }
+
+    @Autowired
+    public SimulatedPaymentProvider(Optional<SimulatedProviderRecordStore> recordStoreOpt) {
+        this.recordStore = recordStoreOpt.orElse(null);
+    }
 
     @Override
     public String getProviderName() {
@@ -31,22 +46,27 @@ public class SimulatedPaymentProvider implements PaymentProvider {
         log.info("SimulatedPaymentProvider processing payment reference [{}] with scenario [{}]",
                 request.getPaymentReference(), scenario);
 
+        PaymentProviderResponse response;
         switch (scenario.toUpperCase()) {
             case "FAIL":
             case "DECLINE":
-                return PaymentProviderResponse.failed(
+                response = PaymentProviderResponse.failed(
                         txId,
                         "DECLINED_INSUFFICIENT_FUNDS",
                         "The simulated card issuer reported insufficient account funds."
                 );
+                recordTransaction(txId, request, "FAILED", response.getResponseCode(), response.getResponseMessage());
+                return response;
 
             case "REQUIRES_ACTION":
             case "3DS":
-                return PaymentProviderResponse.requiresAction(
+                response = PaymentProviderResponse.requiresAction(
                         txId,
                         "https://sandbox.paycore.internal/3ds/verify?tx=" + txId,
                         "Customer 3D-Secure authentication required."
                 );
+                recordTransaction(txId, request, "PENDING", response.getResponseCode(), response.getResponseMessage());
+                return response;
 
             case "TIMEOUT":
             case "UNKNOWN":
@@ -55,11 +75,13 @@ public class SimulatedPaymentProvider implements PaymentProvider {
 
             case "SUCCESS":
             default:
-                return PaymentProviderResponse.success(
+                response = PaymentProviderResponse.success(
                         txId,
                         "200_APPROVED",
                         "Payment authorized and settled successfully by simulated provider."
                 );
+                recordTransaction(txId, request, "SUCCESS", response.getResponseCode(), response.getResponseMessage());
+                return response;
         }
     }
 
@@ -76,6 +98,9 @@ public class SimulatedPaymentProvider implements PaymentProvider {
     @Override
     public PaymentProviderResponse cancelPayment(String providerTransactionId, String requestReference) {
         log.info("SimulatedPaymentProvider cancelling transaction [{}]", providerTransactionId);
+        if (recordStore != null) {
+            recordStore.updatePaymentStatus(providerTransactionId, "CANCELLED");
+        }
         return PaymentProviderResponse.cancelled(
                 providerTransactionId,
                 "Authorization hold successfully voided by simulated provider."
@@ -90,14 +115,17 @@ public class SimulatedPaymentProvider implements PaymentProvider {
         log.info("SimulatedPaymentProvider processing refund reference [{}] for payment [{}] with scenario [{}]",
                 request.getRefundReference(), request.getPaymentReference(), scenario);
 
+        PaymentProviderRefundResponse response;
         switch (scenario.toUpperCase()) {
             case "FAIL":
             case "DECLINE":
-                return PaymentProviderRefundResponse.failed(
+                response = PaymentProviderRefundResponse.failed(
                         refundTxId,
                         "REFUND_DECLINED",
                         "Simulated refund was declined by customer issuing bank."
                 );
+                recordRefund(refundTxId, request, "FAILED", response.getFailureCode(), response.getFailureMessage());
+                return response;
 
             case "TIMEOUT":
             case "UNKNOWN":
@@ -106,11 +134,13 @@ public class SimulatedPaymentProvider implements PaymentProvider {
 
             case "SUCCESS":
             default:
-                return PaymentProviderRefundResponse.success(
+                response = PaymentProviderRefundResponse.success(
                         refundTxId,
                         "200_REFUND_APPROVED",
                         "Simulated refund settled successfully."
                 );
+                recordRefund(refundTxId, request, "SUCCESS", "200_REFUND_APPROVED", "Simulated refund settled successfully.");
+                return response;
         }
     }
 
@@ -129,6 +159,37 @@ public class SimulatedPaymentProvider implements PaymentProvider {
                 "200_CONFIRMED",
                 "Simulated status query confirmed refund settlement."
         );
+    }
+
+    private void recordTransaction(String txId, PaymentProviderRequest request, String status, String code, String message) {
+        if (recordStore != null) {
+            recordStore.recordPaymentTransaction(
+                    txId,
+                    request.getPaymentReference(),
+                    null,
+                    request.getAmount(),
+                    request.getCurrency(),
+                    status,
+                    code,
+                    message
+            );
+        }
+    }
+
+    private void recordRefund(String refundTxId, PaymentProviderRefundRequest request, String status, String code, String message) {
+        if (recordStore != null) {
+            recordStore.recordRefundTransaction(
+                    refundTxId,
+                    request.getProviderTransactionId(),
+                    request.getRefundReference(),
+                    null,
+                    request.getAmount(),
+                    request.getCurrency(),
+                    status,
+                    code,
+                    message
+            );
+        }
     }
 
     private String resolvePaymentScenario(PaymentProviderRequest request) {

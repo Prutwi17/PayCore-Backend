@@ -37,4 +37,7 @@ public interface WebhookDeliveryAttemptRepository extends JpaRepository<WebhookD
 
     @Query("SELECT COUNT(d) FROM WebhookDeliveryAttempt d WHERE d.deliveryStatus = 'DEAD_LETTER'")
     long countDeadLetterDeliveries();
+
+    @Query("SELECT COUNT(d) FROM WebhookDeliveryAttempt d WHERE d.deliveryStatus IN ('FAILED', 'DEAD_LETTER')")
+    long countFailedDeliveries();
 }

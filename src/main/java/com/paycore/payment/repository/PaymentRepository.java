@@ -11,6 +11,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -68,4 +71,51 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("search") String search,
             Pageable pageable
     );
+
+    @Query("""
+        SELECT p FROM Payment p
+        WHERE (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+        ORDER BY p.createdAt ASC
+    """)
+    List<Payment> findByDateRange(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(p) FROM Payment p
+        WHERE (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+    """)
+    long countPaymentsBetween(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(p) FROM Payment p
+        WHERE p.status = :status
+          AND (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+    """)
+    long countByStatusBetween(@Param("status") PaymentStatus status, @Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(p) FROM Payment p
+        WHERE p.status IN :statuses
+          AND (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+    """)
+    long countByStatusInBetween(@Param("statuses") List<PaymentStatus> statuses, @Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+        WHERE p.status = 'SUCCESS'
+          AND (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+    """)
+    BigDecimal sumSuccessfulAmountBetween(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT p.status, COUNT(p) FROM Payment p
+        WHERE (:startDate IS NULL OR p.createdAt >= :startDate)
+          AND (:endDate IS NULL OR p.createdAt <= :endDate)
+        GROUP BY p.status
+    """)
+    List<Object[]> countGroupedByStatusBetween(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
 }

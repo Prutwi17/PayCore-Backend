@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,4 +62,43 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
             @Param("search") String search,
             Pageable pageable
     );
+
+    @Query("""
+        SELECT r FROM Refund r
+        WHERE (:startDate IS NULL OR r.createdAt >= :startDate)
+          AND (:endDate IS NULL OR r.createdAt <= :endDate)
+        ORDER BY r.createdAt ASC
+    """)
+    List<Refund> findByDateRange(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(r) FROM Refund r
+        WHERE (:startDate IS NULL OR r.createdAt >= :startDate)
+          AND (:endDate IS NULL OR r.createdAt <= :endDate)
+    """)
+    long countRefundsBetween(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(r) FROM Refund r
+        WHERE r.status = :status
+          AND (:startDate IS NULL OR r.createdAt >= :startDate)
+          AND (:endDate IS NULL OR r.createdAt <= :endDate)
+    """)
+    long countByStatusBetween(@Param("status") RefundStatus status, @Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COUNT(r) FROM Refund r
+        WHERE r.status IN :statuses
+          AND (:startDate IS NULL OR r.createdAt >= :startDate)
+          AND (:endDate IS NULL OR r.createdAt <= :endDate)
+    """)
+    long countByStatusInBetween(@Param("statuses") List<RefundStatus> statuses, @Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
+
+    @Query("""
+        SELECT COALESCE(SUM(r.amount), 0) FROM Refund r
+        WHERE r.status = 'SUCCESS'
+          AND (:startDate IS NULL OR r.createdAt >= :startDate)
+          AND (:endDate IS NULL OR r.createdAt <= :endDate)
+    """)
+    BigDecimal sumSuccessfulAmountBetween(@Param("startDate") Instant startDate, @Param("endDate") Instant endDate);
 }
