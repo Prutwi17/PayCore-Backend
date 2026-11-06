@@ -69,6 +69,13 @@ public class AuthController {
         ));
     }
 
+    @PostMapping("/google")
+    @Operation(summary = "Google OpenID Connect Sign-In & Registration", description = "Verifies Google ID token cryptographic signature, matches or creates active user, safely links identity, and issues PayCore access and refresh tokens.")
+    public ResponseEntity<ApiResponse<AuthResponse>> loginWithGoogle(@Valid @RequestBody GoogleAuthRequest request) {
+        AuthResponse response = authService.loginWithGoogle(request);
+        return ResponseEntity.ok(ApiResponse.success("Google authentication successful", response));
+    }
+
     @PostMapping("/login")
     @Operation(summary = "User login", description = "Validates credentials, verifies active and verified email status, and returns access and persistent refresh tokens.")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
