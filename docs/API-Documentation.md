@@ -430,7 +430,7 @@
       "merchantId": 10,
       "url": "https://api.store.com/webhooks/paycore",
       "maskedSecret": "whsec_****************",
-      "secret": "whsec_48a9f2bc10de93c85710294817592830...",
+      "secret": "whsec_example_mock_signing_secret_do_not_use_in_prod",
       "subscribedEvents": "PAYMENT_SUCCESS,REFUND_SUCCESS",
       "status": "ACTIVE",
       "description": "Production Webhook Receiver",
