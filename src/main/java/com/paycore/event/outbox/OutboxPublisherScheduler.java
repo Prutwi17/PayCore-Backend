@@ -5,7 +5,7 @@ import com.paycore.event.kafka.KafkaProducerService;
 import com.paycore.event.model.PayCoreDomainEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,12 +19,14 @@ import java.util.concurrent.TimeUnit;
  * Guarantees at-least-once delivery; duplicates are safely handled downstream by inbox consumers.
  */
 @Component
-@ConditionalOnProperty(name = "paycore.outbox.publisher.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisherScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisherScheduler.class);
     private static final int BATCH_SIZE = 50;
     private static final long MAX_BACKOFF_SECONDS = 300L; // 5 minutes
+
+    @Value("${paycore.outbox.publisher.enabled:true}")
+    private boolean publisherEnabled;
 
     private final OutboxService outboxService;
     private final KafkaProducerService kafkaProducerService;
@@ -38,6 +40,10 @@ public class OutboxPublisherScheduler {
 
     @Scheduled(fixedDelayString = "${paycore.outbox.publisher.delay:1000}")
     public void publishPendingEvents() {
+        if (!publisherEnabled) {
+            return;
+        }
+
         List<OutboxEvent> pending = outboxService.findUnpublishedEvents(PageRequest.of(0, BATCH_SIZE));
         if (pending.isEmpty()) {
             return;

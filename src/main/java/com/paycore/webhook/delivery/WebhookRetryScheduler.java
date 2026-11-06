@@ -4,7 +4,7 @@ import com.paycore.webhook.entity.WebhookDeliveryAttempt;
 import com.paycore.webhook.repository.WebhookDeliveryAttemptRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -16,11 +16,13 @@ import java.util.List;
  * Periodically processes scheduled webhook delivery retries with exponential backoff.
  */
 @Component
-@ConditionalOnProperty(name = "paycore.webhook.retry.enabled", havingValue = "true", matchIfMissing = true)
 public class WebhookRetryScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookRetryScheduler.class);
     private static final int BATCH_SIZE = 20;
+
+    @Value("${paycore.webhook.retry.enabled:true}")
+    private boolean retryEnabled;
 
     private final WebhookDeliveryAttemptRepository deliveryAttemptRepository;
     private final WebhookDeliveryWorker deliveryWorker;
@@ -33,6 +35,10 @@ public class WebhookRetryScheduler {
 
     @Scheduled(fixedDelayString = "${paycore.webhook.retry.delay:5000}")
     public void processDueRetries() {
+        if (!retryEnabled) {
+            return;
+        }
+
         List<WebhookDeliveryAttempt> dueRetries = deliveryAttemptRepository.findDueRetries(Instant.now(), PageRequest.of(0, BATCH_SIZE));
         if (dueRetries.isEmpty()) {
             return;

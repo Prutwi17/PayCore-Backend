@@ -5,6 +5,7 @@ import com.paycore.config.kafka.KafkaTopicConfig;
 import com.paycore.event.model.PayCoreDomainEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
@@ -22,15 +23,22 @@ public class KafkaProducerService {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
-    public KafkaProducerService(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
-        this.kafkaTemplate = kafkaTemplate;
+    @Autowired
+    public KafkaProducerService(ObjectMapper objectMapper,
+                                @Autowired(required = false) KafkaTemplate<String, String> kafkaTemplate) {
         this.objectMapper = objectMapper;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     /**
      * Publishes a domain event to the appropriate Kafka topic with its aggregateId as partition key.
      */
     public CompletableFuture<SendResult<String, String>> publishEvent(PayCoreDomainEvent event) {
+        if (kafkaTemplate == null) {
+            log.warn("KafkaTemplate not configured; skipping publication for event [{}]", event.getEventId());
+            return CompletableFuture.completedFuture(null);
+        }
+
         String topic = resolveTopic(event.getAggregateType());
         String partitionKey = event.getAggregateId();
 

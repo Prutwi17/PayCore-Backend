@@ -8,6 +8,8 @@ import com.paycore.event.model.PayCoreDomainEvent;
 import com.paycore.webhook.delivery.WebhookDispatcherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Component;
  * Idempotent consumer for payment lifecycle events published to Apache Kafka.
  */
 @Component
+@Profile("!test")
+@ConditionalOnProperty(name = "paycore.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class PaymentEventConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentEventConsumer.class);

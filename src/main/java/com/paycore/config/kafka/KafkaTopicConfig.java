@@ -1,14 +1,18 @@
 package com.paycore.config.kafka;
 
 import org.apache.kafka.clients.admin.NewTopic;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.config.TopicBuilder;
 
 /**
  * Declares Kafka topics for PayCore event streaming.
  */
 @Configuration
+@Profile("!test")
+@ConditionalOnProperty(name = "paycore.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class KafkaTopicConfig {
 
     public static final String PAYMENT_EVENTS_TOPIC = "paycore.payment.events";
