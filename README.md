@@ -47,6 +47,10 @@ Detailed technical documentation is maintained under the [`docs/`](./docs) direc
 | [**AuthenticationFlow.md**](./docs/AuthenticationFlow.md) | Email verification, JWT access, refresh token rotation, replay defense |
 | [**PasswordRecovery.md**](./docs/PasswordRecovery.md) | Anti-enumeration forgot password, reset tokens, session invalidation alerts |
 | [**AdminProvisioning.md**](./docs/AdminProvisioning.md) | Zero-trust administrator onboarding for omp27614@gmail.com |
+| [**TestingGuide.md**](./docs/TestingGuide.md) | Comprehensive testing guide across unit, integration, and frontend suites |
+| [**DeploymentGuide.md**](./docs/DeploymentGuide.md) | Production Docker, Nginx, MySQL, Redis, Kafka, and deployment runbooks |
+| [**PaymentLifecycle.md**](./docs/PaymentLifecycle.md) | State machine, two-phase zero-DB network I/O, balance reservations, and idempotency |
+| [**KnownLimitations.md**](./docs/KnownLimitations.md) | Simulated provider scope, PCI DSS disclosures, Gmail quotas, and future scope |
 | [**CICD.md**](./docs/CICD.md) | GitHub Actions CI pipeline, Dockerfile, docker-compose.yml |
 | [**GitWorkflow.md**](./docs/GitWorkflow.md) | Branching strategy, PR guidelines, conventional commits |
 | [**DevelopmentRoadmap.md**](./docs/DevelopmentRoadmap.md) | 8-Milestone execution plan with acceptance criteria |
@@ -79,7 +83,19 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 7.5 Complete)
+## 🧪 Testing & Current Status (Stage 8 Complete — Project Finalized)
+
+PayCore Stage 8 (Final Testing, Optimization, Security, Deployment & Project Completion) is fully implemented, verified, and operational:
+
+- **143 Automated Tests Passing:** Complete backend test suite running across unit, repository, service, state machine, idempotency, concurrent race condition, and end-to-end integration tests (0 failures, 0 errors, 0 skipped).
+- **Scheduled Token Lifecycle Cleanup:** Automatic daily purging (TokenCleanupScheduler) of expired verification, reset, and refresh tokens older than 48 hours to preserve database health and index performance.
+- **Production-Ready Configuration:** Dedicated pplication-prod.properties with strict DDL validation (ddl-auto=validate), HikariCP connection pool optimization, and comprehensive schema-production.sql MySQL migration script.
+- **Full Docker & Container Orchestration:** Production multi-stage Dockerfiles and container-healthcheck verified docker-compose.yml supporting MySQL, Redis, Kafka, Backend, and Frontend.
+- **Postman API Test Suite:** Complete collection and environment (postman/PayCore.postman_collection.json) covering all 8 major functional modules with automated token extraction.
+- **Zero Double-Charge & Timeout Resilience:** Authoritative MySQL composite unique constraints, Redis distributed locks, and two-phase balance reservations.
+- **Real Gmail API Integration:** Google OAuth 2.0 offline authorization with fail-fast diagnostics (no fake delivery).
+
+## 🧪 Previous Stage 7.5 Details
 
 PayCore Stage 7.5 (Real Gmail Email Integration, Registration, Login, Logout & Password Recovery) is fully implemented, verified, and operational:
 
