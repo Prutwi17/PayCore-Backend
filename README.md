@@ -42,6 +42,11 @@ Detailed technical documentation is maintained under the [`docs/`](./docs) direc
 | [**AppFlow.md**](./docs/AppFlow.md) | Payment state machine, refund flow, webhook dispatching, reconciliation |
 | [**API-Documentation.md**](./docs/API-Documentation.md) | Comprehensive REST API specification, request/response models |
 | [**Security.md**](./docs/Security.md) | Spring Security, JWT, RBAC, API Key hashing, webhook HMAC signing |
+| [**EmailIntegration.md**](./docs/EmailIntegration.md) | Real Gmail API architecture, OAuth 2.0 offline refresh, MIME templating |
+| [**GoogleOAuthSetup.md**](./docs/GoogleOAuthSetup.md) | Step-by-step Google Cloud project setup, consent screen, refresh token retrieval |
+| [**AuthenticationFlow.md**](./docs/AuthenticationFlow.md) | Email verification, JWT access, refresh token rotation, replay defense |
+| [**PasswordRecovery.md**](./docs/PasswordRecovery.md) | Anti-enumeration forgot password, reset tokens, session invalidation alerts |
+| [**AdminProvisioning.md**](./docs/AdminProvisioning.md) | Zero-trust administrator onboarding for omp27614@gmail.com |
 | [**CICD.md**](./docs/CICD.md) | GitHub Actions CI pipeline, Dockerfile, docker-compose.yml |
 | [**GitWorkflow.md**](./docs/GitWorkflow.md) | Branching strategy, PR guidelines, conventional commits |
 | [**DevelopmentRoadmap.md**](./docs/DevelopmentRoadmap.md) | 8-Milestone execution plan with acceptance criteria |
@@ -74,7 +79,19 @@ Actuator Health: `http://localhost:8080/actuator/health`
 
 ---
 
-## 🧪 Testing & Current Status (Stage 6 Complete)
+## 🧪 Testing & Current Status (Stage 7.5 Complete)
+
+PayCore Stage 7.5 (Real Gmail Email Integration, Registration, Login, Logout & Password Recovery) is fully implemented, verified, and operational:
+
+- **141 Automated Tests Passing:** Complete test suite running across unit, repository, service, and end-to-end integration tests with 0 failures, 0 errors, and 0 skipped.
+- **Real Gmail API Integration:** Dispatches real RFC 2822 multipart HTML/text emails through Google OAuth 2.0 and Gmail REST API (Users.Messages.Send). No simulated email delivery.
+- **Fail-Fast Error Diagnostics:** If OAuth credentials or refresh tokens are missing, the API rejects requests immediately with 503 Service Unavailable (EMAIL_DELIVERY_UNAVAILABLE). No fake delivery claims.
+- **Mandatory Email Verification:** Merchant accounts are registered with email_verified=false and cannot authenticate until verifying ownership via a single-use SHA-256 hashed token with 24-hour expiration.
+- **Dual-Token & Refresh Token Rotation:** Issues 15-minute JWT access tokens and persistent 7-day refresh tokens. Using a refresh token rotates both tokens and invalidates the previous one, with automated replay attack detection.
+- **Anti-Enumeration Password Recovery:** Generic 200 OK responses prevent account enumeration. Reset tokens are single-use, expire in 60 minutes, invalidate all active sessions upon consumption, and trigger immediate security alerts.
+- **Zero-Trust Admin Onboarding:** System owner email omp27614@gmail.com is onboarded via a cryptographic setup link sent to their Gmail inbox. No hardcoded default administrator credentials exist in production.
+
+## 🧪 Previous Stage 6 Details
 
 PayCore Stage 6 (Webhooks, Kafka & Asynchronous Processing) is fully implemented, verified, and operational:
 

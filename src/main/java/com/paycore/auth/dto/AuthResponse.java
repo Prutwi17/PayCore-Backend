@@ -5,6 +5,7 @@ import com.paycore.user.dto.UserResponseDto;
 public class AuthResponse {
 
     private String accessToken;
+    private String refreshToken;
     private String tokenType = "Bearer";
     private long expiresIn;
     private UserResponseDto user;
@@ -13,7 +14,12 @@ public class AuthResponse {
     }
 
     public AuthResponse(String accessToken, long expiresIn, UserResponseDto user) {
+        this(accessToken, null, expiresIn, user);
+    }
+
+    public AuthResponse(String accessToken, String refreshToken, long expiresIn, UserResponseDto user) {
         this.accessToken = accessToken;
+        this.refreshToken = refreshToken;
         this.tokenType = "Bearer";
         this.expiresIn = expiresIn;
         this.user = user;
@@ -25,6 +31,14 @@ public class AuthResponse {
 
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 
     public String getTokenType() {

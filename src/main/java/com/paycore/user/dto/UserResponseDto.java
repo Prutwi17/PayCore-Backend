@@ -18,6 +18,9 @@ public class UserResponseDto {
     private Long merchantId;
     private String merchantCode;
     private List<String> roles;
+    private boolean emailVerified;
+    private Instant emailVerifiedAt;
+    private Instant lastLoginAt;
     private Instant createdAt;
 
     public UserResponseDto() {
@@ -36,6 +39,9 @@ public class UserResponseDto {
         dto.setRoles(user.getRoles().stream()
                 .map(role -> role.getName())
                 .collect(Collectors.toList()));
+        dto.setEmailVerified(user.isEmailVerified());
+        dto.setEmailVerifiedAt(user.getEmailVerifiedAt());
+        dto.setLastLoginAt(user.getLastLoginAt());
         dto.setCreatedAt(user.getCreatedAt());
         return dto;
     }
@@ -110,6 +116,30 @@ public class UserResponseDto {
 
     public void setRoles(List<String> roles) {
         this.roles = roles;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public void setEmailVerifiedAt(Instant emailVerifiedAt) {
+        this.emailVerifiedAt = emailVerifiedAt;
+    }
+
+    public Instant getLastLoginAt() {
+        return lastLoginAt;
+    }
+
+    public void setLastLoginAt(Instant lastLoginAt) {
+        this.lastLoginAt = lastLoginAt;
     }
 
     public Instant getCreatedAt() {

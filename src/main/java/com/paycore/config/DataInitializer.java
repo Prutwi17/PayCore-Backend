@@ -7,6 +7,7 @@ import com.paycore.user.repository.RoleRepository;
 import com.paycore.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,9 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${paycore.security.seed-test-admin:false}")
+    private boolean seedTestAdmin;
+
     public DataInitializer(RoleRepository roleRepository, UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
@@ -30,24 +34,36 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        // Seed default platform roles
         Role adminRole = createRoleIfNotExists(Role.ROLE_ADMIN);
         createRoleIfNotExists(Role.ROLE_MERCHANT);
         createRoleIfNotExists(Role.ROLE_CUSTOMER);
 
-        // Seed default platform admin account if not already present
-        String adminEmail = "admin@paycore.internal";
-        Optional<User> existingAdmin = userRepository.findByEmail(adminEmail);
-        if (existingAdmin.isEmpty()) {
-            User admin = new User();
-            admin.setUsername("admin");
-            admin.setEmail(adminEmail);
-            admin.setFullName("Platform Administrator");
-            admin.setPasswordHash(passwordEncoder.encode("AdminPassword123!"));
-            admin.setStatus(UserStatus.ACTIVE);
-            admin.addRole(adminRole);
+        // In test environments only, seed test administrator for legacy test suites if explicitly enabled
+        if (seedTestAdmin) {
+            String testAdminEmail = "admin@paycore.internal";
+            Optional<User> existingTestAdmin = userRepository.findByEmail(testAdminEmail);
+            if (existingTestAdmin.isEmpty()) {
+                User testAdmin = new User();
+                testAdmin.setUsername("admin");
+                testAdmin.setEmail(testAdminEmail);
+                testAdmin.setFullName("Platform Administrator");
+                testAdmin.setPasswordHash(passwordEncoder.encode("AdminPassword123!"));
+                testAdmin.setStatus(UserStatus.ACTIVE);
+                testAdmin.setEmailVerified(true);
+                testAdmin.addRole(adminRole);
+                userRepository.save(testAdmin);
+                log.info("Initialized test administrator account: [{}]", testAdminEmail);
+            }
+        }
 
-            userRepository.save(admin);
-            log.info("Initialized default administrator account: [{}]", adminEmail);
+        // Verify if any platform administrator is currently provisioned
+        boolean adminExists = userRepository.existsByRoles_Name(Role.ROLE_ADMIN);
+        if (!adminExists) {
+            log.info("No platform administrator account is currently configured.");
+            log.info("Initial administrator onboarding is available for [omp27614@gmail.com] via secure setup flow.");
+        } else {
+            log.info("Platform administrator role is provisioned.");
         }
     }
 
