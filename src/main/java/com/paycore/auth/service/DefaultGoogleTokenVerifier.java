@@ -52,6 +52,28 @@ public class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
         try {
             GoogleIdToken idToken = verifier.verify(idTokenString.trim());
             if (idToken == null) {
+                // Determine precise failure reason if token is structurally readable
+                try {
+                    GoogleIdToken parsed = GoogleIdToken.parse(GsonFactory.getDefaultInstance(), idTokenString.trim());
+                    if (parsed != null && parsed.getPayload() != null) {
+                        GoogleIdToken.Payload p = parsed.getPayload();
+                        Long exp = p.getExpirationTimeSeconds();
+                        if (exp != null && exp * 1000 < System.currentTimeMillis()) {
+                            log.warn("Google ID token expired at [{}], current time [{}]", exp * 1000, System.currentTimeMillis());
+                            throw new UnauthorizedException("Google ID token has expired. Please sign in again.");
+                        }
+                        if (!this.configuredClientId.isBlank() && !p.getAudienceAsList().contains(this.configuredClientId)) {
+                            log.warn("Google ID token audience mismatch: configured [{}] vs token [{}]",
+                                    this.configuredClientId, p.getAudienceAsList());
+                            throw new UnauthorizedException("Google Client ID mismatch: Token audience does not match configured backend client ID.");
+                        }
+                    }
+                } catch (UnauthorizedException ue) {
+                    throw ue;
+                } catch (Exception parseEx) {
+                    log.debug("Could not parse token for diagnostic breakdown: {}", parseEx.getMessage());
+                }
+
                 log.warn("Google ID token verification failed: null token returned by GoogleIdTokenVerifier");
                 throw new UnauthorizedException("Invalid, expired, or untrusted Google ID token");
             }
