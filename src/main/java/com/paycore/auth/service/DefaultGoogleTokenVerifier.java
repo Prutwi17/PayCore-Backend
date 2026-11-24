@@ -25,14 +25,11 @@ public class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
 
     private final String configuredClientId;
     private final GoogleIdTokenVerifier verifier;
-    private final boolean allowDevGoogleToken;
 
     public DefaultGoogleTokenVerifier(
-            @Value("${paycore.google.client-id:${GOOGLE_CLIENT_ID:${paycore.email.client-id:}}}") String clientId,
-            @Value("${paycore.security.allow-dev-google-token:true}") boolean allowDevGoogleToken
+            @Value("${paycore.google.client-id:${GOOGLE_CLIENT_ID:${paycore.email.client-id:}}}") String clientId
     ) {
         this.configuredClientId = clientId != null ? clientId.trim() : "";
-        this.allowDevGoogleToken = allowDevGoogleToken;
 
         GoogleIdTokenVerifier.Builder builder = new GoogleIdTokenVerifier.Builder(
                 new NetHttpTransport(),
@@ -50,24 +47,6 @@ public class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
     public GoogleIdTokenPayload verify(String idTokenString) {
         if (idTokenString == null || idTokenString.isBlank()) {
             throw new UnauthorizedException("Google ID token is required");
-        }
-
-        String token = idTokenString.trim();
-
-        // Support development simulation token for omp27614@gmail.com when enabled
-        if (allowDevGoogleToken && token.startsWith("dev_google_token_")) {
-            String email = token.substring("dev_google_token_".length()).trim().toLowerCase();
-            if (email.isBlank()) {
-                email = "omp27614@gmail.com";
-            }
-            log.info("Development Google token verified for [{}]", email);
-            return new GoogleIdTokenPayload(
-                    "google_dev_sub_" + email.replace("@", "_").replace(".", "_"),
-                    email,
-                    true,
-                    email.equals("omp27614@gmail.com") ? "Platform Administrator" : "PayCore User",
-                    null
-            );
         }
 
         try {
