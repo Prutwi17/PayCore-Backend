@@ -214,4 +214,46 @@ class GoogleAuthServiceTest {
                 .isInstanceOf(UnauthorizedException.class)
                 .hasMessageContaining("required");
     }
+
+    @Test
+    @DisplayName("Should recognize omp27614@gmail.com as platform administrator with ROLE_ADMIN via Google sign-in")
+    void loginWithGoogle_whenInitialAdmin_assignsRoleAdmin() {
+        String idToken = "valid.google.token.admin";
+        GoogleIdTokenPayload payload = new GoogleIdTokenPayload(
+                "google_sub_admin", "omp27614@gmail.com", true, "Platform Administrator", null
+        );
+
+        when(googleTokenVerifier.verify(idToken)).thenReturn(payload);
+        when(userExternalIdentityRepository.findByProviderAndProviderSubject("GOOGLE", "google_sub_admin"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByEmail("omp27614@gmail.com")).thenReturn(Optional.empty());
+        when(userRepository.existsByUsername(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_random_pwd");
+
+        Role adminRole = new Role(Role.ROLE_ADMIN);
+        adminRole.setId(1L);
+        when(roleRepository.findByName(Role.ROLE_ADMIN)).thenReturn(Optional.of(adminRole));
+
+        User savedUser = new User();
+        savedUser.setId(1L);
+        savedUser.setEmail("omp27614@gmail.com");
+        savedUser.setFullName("Platform Administrator");
+        savedUser.setStatus(UserStatus.ACTIVE);
+        savedUser.addRole(adminRole);
+        when(userRepository.save(any(User.class))).thenReturn(savedUser);
+
+        when(tokenProvider.generateToken(any(SecurityUserPrincipal.class))).thenReturn("admin_jwt_token");
+        when(tokenProvider.getExpirationMs()).thenReturn(86400000L);
+
+        AuthResponse response = authService.loginWithGoogle(new GoogleAuthRequest(idToken));
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAccessToken()).isEqualTo("admin_jwt_token");
+        assertThat(response.getUser().getEmail()).isEqualTo("omp27614@gmail.com");
+        assertThat(response.getUser().getRoles()).contains(Role.ROLE_ADMIN);
+
+        verify(roleRepository).findByName(Role.ROLE_ADMIN);
+        verify(merchantRepository, never()).save(any(Merchant.class));
+        verify(userExternalIdentityRepository).save(any(UserExternalIdentity.class));
+    }
 }
