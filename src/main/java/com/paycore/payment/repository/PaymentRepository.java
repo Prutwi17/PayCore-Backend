@@ -45,6 +45,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Page<Payment> findByMerchantId(Long merchantId, Pageable pageable);
 
+    long countByMerchantId(Long merchantId);
+
+    long countByMerchantIdAndStatus(Long merchantId, PaymentStatus status);
+
+    long countByMerchantIdAndStatusIn(Long merchantId, List<PaymentStatus> statuses);
+
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.merchant.id = :merchantId AND p.status = 'SUCCESS'")
+    BigDecimal sumSuccessfulAmountByMerchantId(@Param("merchantId") Long merchantId);
+
     Page<Payment> findByMerchantIdAndStatus(Long merchantId, PaymentStatus status, Pageable pageable);
 
     Page<Payment> findByStatus(PaymentStatus status, Pageable pageable);

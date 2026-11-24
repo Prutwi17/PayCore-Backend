@@ -15,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/admin/audit-logs")
@@ -47,6 +48,16 @@ public class AdminAuditLogController {
                 actorId, action, resourceType, resourceId, merchantId, startDate, endDate, pageRequest
         );
         return ResponseEntity.ok(ApiResponse.success("Audit logs retrieved successfully", logs));
+    }
+
+    @GetMapping("/recent")
+    @Operation(summary = "Get the 20 most recent immutable audit logs")
+    public ResponseEntity<ApiResponse<List<AuditLogResponseDto>>> getRecentAuditLogs() {
+        PageRequest pageRequest = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<AuditLogResponseDto> logs = auditLogService.getAuditLogs(
+                null, null, null, null, null, null, null, pageRequest
+        ).getContent();
+        return ResponseEntity.ok(ApiResponse.success("Recent audit logs retrieved successfully", logs));
     }
 
     @GetMapping("/{id}")
