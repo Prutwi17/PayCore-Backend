@@ -57,11 +57,20 @@ public class AdminDashboardService {
         summary.setPendingProcessingPayments(paymentRepository.countByStatusInBetween(
                 List.of(PaymentStatus.CREATED, PaymentStatus.PROCESSING), startDate, endDate));
         summary.setUnknownPayments(paymentRepository.countByStatusBetween(PaymentStatus.UNKNOWN, startDate, endDate));
-        summary.setTotalPaymentVolume(paymentRepository.sumSuccessfulAmountBetween(startDate, endDate));
+        BigDecimal totalVolume = paymentRepository.sumSuccessfulAmountBetween(startDate, endDate);
+        summary.setTotalPaymentVolume(totalVolume != null ? totalVolume : BigDecimal.ZERO);
+
+        double successRate = summary.getTotalPayments() > 0
+                ? BigDecimal.valueOf(summary.getSuccessfulPayments() * 100.0 / summary.getTotalPayments())
+                        .setScale(1, RoundingMode.HALF_UP)
+                        .doubleValue()
+                : 0.0;
+        summary.setPaymentSuccessRate(successRate);
 
         summary.setTotalRefunds(refundRepository.countRefundsBetween(startDate, endDate));
         summary.setSuccessfulRefunds(refundRepository.countByStatusBetween(RefundStatus.SUCCESS, startDate, endDate));
-        summary.setSuccessfulRefundVolume(refundRepository.sumSuccessfulAmountBetween(startDate, endDate));
+        BigDecimal refundVolume = refundRepository.sumSuccessfulAmountBetween(startDate, endDate);
+        summary.setSuccessfulRefundVolume(refundVolume != null ? refundVolume : BigDecimal.ZERO);
         summary.setPendingRefunds(refundRepository.countByStatusInBetween(
                 List.of(RefundStatus.REQUESTED, RefundStatus.PROCESSING), startDate, endDate));
 

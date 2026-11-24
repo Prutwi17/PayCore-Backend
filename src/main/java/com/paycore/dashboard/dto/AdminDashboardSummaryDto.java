@@ -10,7 +10,8 @@ public class AdminDashboardSummaryDto {
     private long failedPayments;
     private long pendingProcessingPayments;
     private long unknownPayments;
-    private BigDecimal totalPaymentVolume;
+    private BigDecimal totalPaymentVolume = BigDecimal.ZERO;
+    private double paymentSuccessRate;
 
     private long totalRefunds;
     private long successfulRefunds;
@@ -73,6 +74,14 @@ public class AdminDashboardSummaryDto {
 
     public void setTotalPaymentVolume(BigDecimal totalPaymentVolume) {
         this.totalPaymentVolume = totalPaymentVolume;
+    }
+
+    public double getPaymentSuccessRate() {
+        return paymentSuccessRate;
+    }
+
+    public void setPaymentSuccessRate(double paymentSuccessRate) {
+        this.paymentSuccessRate = paymentSuccessRate;
     }
 
     public long getTotalRefunds() {

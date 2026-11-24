@@ -182,15 +182,19 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         String merchantCode = null;
-        if (request.getBusinessName() != null && !request.getBusinessName().isBlank()) {
+        if (!INITIAL_ADMIN_EMAIL.equalsIgnoreCase(normalizedEmail)) {
             merchantCode = "mer_" + HashUtil.generateSecureToken(4);
+            String resolvedBusinessName = (request.getBusinessName() != null && !request.getBusinessName().isBlank())
+                    ? request.getBusinessName().trim()
+                    : savedUser.getFullName() + " Commerce";
+
             Merchant merchant = new Merchant();
             merchant.setMerchantCode(merchantCode);
-            merchant.setBusinessName(request.getBusinessName().trim());
+            merchant.setBusinessName(resolvedBusinessName);
             merchant.setBusinessEmail(savedUser.getEmail());
             merchant.setContactNumber(request.getPhoneNumber());
             merchant.setBusinessAddress(request.getBusinessAddress());
-            merchant.setStatus(MerchantStatus.PENDING);
+            merchant.setStatus(MerchantStatus.ACTIVE);
             merchant.setUserId(savedUser.getId());
             merchant.setWebhookSecret("whsec_" + HashUtil.generateSecureToken(16));
 
