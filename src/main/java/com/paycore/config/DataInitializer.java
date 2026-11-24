@@ -46,7 +46,7 @@ public class DataInitializer implements CommandLineRunner {
             User initialAdmin = new User();
             initialAdmin.setUsername("omp27614");
             initialAdmin.setEmail(initialAdminEmail);
-            initialAdmin.setFullName("Platform Administrator");
+            initialAdmin.setFullName("Admin");
             initialAdmin.setPasswordHash(passwordEncoder.encode("AdminPassword123!"));
             initialAdmin.setStatus(UserStatus.ACTIVE);
             initialAdmin.setEmailVerified(true);
@@ -57,6 +57,10 @@ public class DataInitializer implements CommandLineRunner {
         } else {
             User initialAdmin = existingInitialAdmin.get();
             boolean updated = false;
+            if ("Platform Administrator".equals(initialAdmin.getFullName())) {
+                initialAdmin.setFullName("Admin");
+                updated = true;
+            }
             if (!initialAdmin.getRoles().contains(adminRole)) {
                 initialAdmin.addRole(adminRole);
                 updated = true;
